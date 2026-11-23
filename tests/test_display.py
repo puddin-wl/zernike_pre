@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import pytest
+from optics import display
 
 
 @pytest.mark.parametrize("no_show,environment_backend,expected", [
@@ -30,3 +31,36 @@ def test_explicit_display_mode_overrides_inherited_backend(no_show, environment_
     completed = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[1],
                                env=environment, capture_output=True, text=True, timeout=30)
     assert completed.returncode == 0, completed.stdout+completed.stderr
+
+
+def test_macos_falls_back_to_native_backend_if_qt_is_missing():
+    attempted = []
+
+    def switch_backend(name):
+        attempted.append(name)
+        if name == "QtAgg":
+            raise ImportError("Qt unavailable")
+
+    assert display._select_interactive_backend(switch_backend, "darwin") == "MacOSX"
+    assert attempted == ["QtAgg", "MacOSX"]
+
+
+def test_display_failure_does_not_silently_select_file_only_backend():
+    def unavailable(name):
+        raise ImportError(f"{name} unavailable")
+
+    with pytest.raises(RuntimeError, match="--no-show"):
+        display._select_interactive_backend(unavailable, "darwin")
+
+
+@pytest.mark.parametrize("platform,available,expected", [
+    ("darwin", ["PingFang SC", "DejaVu Sans"], ["PingFang SC", "DejaVu Sans"]),
+    ("darwin", ["Songti SC", "DejaVu Sans"], ["Songti SC", "DejaVu Sans"]),
+    ("win32", ["Microsoft YaHei", "DejaVu Sans"], ["Microsoft YaHei", "DejaVu Sans"]),
+    ("darwin", ["DejaVu Sans"], ["DejaVu Sans"]),
+])
+def test_fonts_are_selected_from_the_target_system(monkeypatch, platform, available, expected):
+    from types import SimpleNamespace
+    from matplotlib import font_manager
+    monkeypatch.setattr(font_manager.fontManager, "ttflist", [SimpleNamespace(name=name) for name in available])
+    assert display.font_families(platform) == expected

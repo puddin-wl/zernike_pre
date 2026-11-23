@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import numpy as np
+from .display import font_families
 
 
 def _number(value):
@@ -120,7 +121,7 @@ def plot_result(result, destination):
 
     cfg, arrays = result.config, result.case.arrays
     beam = "高斯入射" if cfg.beam_type == "gaussian" else "均匀入射"
-    with plt.rc_context({"font.family": ["Microsoft YaHei", "DejaVu Sans"], "font.size": 10,
+    with plt.rc_context({"font.family": font_families(), "font.size": 10,
                          "axes.unicode_minus": False, "text.color": "#222222",
                          "axes.labelcolor": "#444444", "xtick.color": "#555555", "ytick.color": "#555555",
                          "axes.edgecolor": "#AAAAAA", "axes.linewidth": 0.7}):

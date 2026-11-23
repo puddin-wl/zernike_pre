@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import numpy as np
+from .display import font_families
 
 BLUE, ORANGE = "#3576C9", "#DF813A"
 
@@ -40,7 +41,7 @@ def plot_result(result, destination):
 
     cases, cfg = (result.baseline, result.aberrated), result.config
     with plt.rc_context({
-        "font.family": ["Microsoft YaHei", "DejaVu Sans"], "font.size": 10,
+        "font.family": font_families(), "font.size": 10,
         "axes.unicode_minus": False, "text.color": "#222222",
         "axes.labelcolor": "#444444", "xtick.color": "#555555", "ytick.color": "#555555",
         "axes.edgecolor": "#AAAAAA", "axes.linewidth": 0.7,

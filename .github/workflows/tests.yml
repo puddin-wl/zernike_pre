@@ -1,0 +1,35 @@
+name: Windows and macOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python 3.12
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15, macos-15-intel]
+    env:
+      PYTHONUTF8: "1"
+      PYTHONNOUSERSITE: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: Export diffraction figure
+        run: python diffraction.py --no-show --grid-size 256 --image-samples 65 --axial-samples 33
+      - name: Export aberration figure
+        run: python aberration.py --no-show --grid-size 256 --image-samples 65 --axial-samples 33

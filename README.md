@@ -15,7 +15,24 @@ conda env create -f environment.yml
 conda activate lpr
 ```
 
-依赖包括 Python 3.12、NumPy、SciPy、Matplotlib、PySide6 和 pytest。主要在 Windows + Conda 环境验证，默认显示 Qt 图窗，也可用 `--no-show` 只保存图片与数据。
+依赖包括 Python 3.12、NumPy、SciPy、Matplotlib、PySide6 和 pytest。Windows 和 macOS 共用计算程序，默认显示图窗，也可用 `--no-show` 只保存图片与数据。
+
+### macOS（Apple Silicon / Intel）
+
+在 Mac 的终端创建本机环境后运行：
+
+```bash
+conda env create -f environment.yml
+conda activate lpr
+python diffraction.py
+python aberration.py
+```
+
+已有环境可运行 `conda env update -f environment.yml`。**不要在 Mac 使用 `environment.win-64.lock.txt`**，该文件仅包含 Windows 构建版本；Mac 应使用通用的 `environment.yml`，由 Conda 解析本机架构的依赖。
+
+显示优先使用跨平台 QtAgg；macOS 在 Qt 不可用时尝试原生 MacOSX 后端，再尝试 TkAgg。无法启用窗口时会明确报错，不会自动悄悄切成仅保存模式。Mac 自动选择已安装的苹方、黑体或宋体等中文字体；Windows 保留微软雅黑选择和 Conda Qt DLL 路径修复。
+
+不使用 Conda 时，也可在 Python 3.12 虚拟环境中执行 `python -m pip install -r requirements.txt`。Qt 支持范围以本机可安装的 PySide6 版本为准，参见 [Qt for Python 文档](https://doc.qt.io/qtforpython-6/gettingstarted.html)。
 
 ## 程序一：无像差
 
@@ -66,7 +83,7 @@ conda run --no-capture-output -n lpr python aberration.py --zernike 3,1,0.15 --z
 conda run --no-capture-output -n lpr python aberration.py --no-aberrations --no-show
 ```
 
-直接运行两份脚本时，默认使用 Qt 图窗显示，程序等待关闭图窗后结束；同时自动保存图片。只有显式传入 `--no-show` 才不弹窗。命令行会打印 `overview.png` 的完整保存路径。`--help` 查看全部选项；`--verbose` 显示进度和数值诊断。
+直接运行两份脚本时，默认使用交互图窗显示，程序等待关闭图窗后结束；同时自动保存图片。只有显式传入 `--no-show` 才不弹窗。命令行会打印 `overview.png` 的完整保存路径。`--help` 查看全部选项；`--verbose` 显示进度和数值诊断。
 
 VS Code 打开项目文件夹后，执行“Python: Select Interpreter”并选择 `lpr`，再使用右上角“运行 Python 文件”。程序会自动补齐该 Conda 环境的 Windows Qt DLL 搜索路径，不要求终端事先执行 `conda activate`。F5 也提供了对应的项目启动配置，使用当前选择的解释器。本机 `.vscode/settings.json` 不纳入仓库。
 
@@ -115,4 +132,4 @@ conda env config vars set -n lpr PYTHONNOUSERSITE=1
 conda run --no-capture-output -n lpr python -m pytest -q
 ```
 
-检查覆盖解析高斯传播、截光功率、Airy 尺度、Zernike 正交归一、XZ/YZ 固定切面、零像差时两程序一致性，以及 Windows Qt 显示后端。
+检查覆盖解析高斯传播、截光功率、Airy 尺度、Zernike 正交归一、XZ/YZ 固定切面、零像差时两程序一致性、显示后端和平台字体选择。GitHub Actions 分别在 Windows、Apple Silicon Mac 和 Intel Mac 上运行检查及两份程序的图片导出。
