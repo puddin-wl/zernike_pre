@@ -19,7 +19,7 @@ conda activate lpr
 
 ### macOS（Apple Silicon / Intel）
 
-在 Mac 的终端创建本机环境后运行：
+首次安装时，按上面的步骤克隆仓库并进入 `zernike_pre` 文件夹，再创建本机环境并运行：
 
 ```bash
 conda env create -f environment.yml
@@ -28,9 +28,23 @@ python diffraction.py
 python aberration.py
 ```
 
-已有环境可运行 `conda env update -f environment.yml`。**不要在 Mac 使用 `environment.win-64.lock.txt`**，该文件仅包含 Windows 构建版本；Mac 应使用通用的 `environment.yml`，由 Conda 解析本机架构的依赖。
+已经克隆仓库且已有 `lpr` 环境时，在项目文件夹中更新代码和环境后运行：
+
+```bash
+git pull
+conda env update -f environment.yml
+conda activate lpr
+python diffraction.py
+python aberration.py
+```
+
+**不要在 Mac 使用 `environment.win-64.lock.txt`**，该文件仅包含 Windows 构建版本；Mac 应使用通用的 `environment.yml`，由 Conda 解析本机架构的依赖。
+
+在 VS Code 中，先执行“Python: Select Interpreter”并选择本机的 `lpr` 环境，再点击右上角“运行 Python 文件”。默认弹出图窗并保存结果；只需保存时添加 `--no-show`。上述两条运行命令依次执行，关闭第一个程序的图窗后再运行第二个。
 
 显示优先使用跨平台 QtAgg；macOS 在 Qt 不可用时尝试原生 MacOSX 后端，再尝试 TkAgg。无法启用窗口时会明确报错，不会自动悄悄切成仅保存模式。Mac 自动选择已安装的苹方、黑体或宋体等中文字体；Windows 保留微软雅黑选择和 Conda Qt DLL 路径修复。
+
+Windows、Apple Silicon Mac 和 Intel Mac 的自动检查已覆盖计算、图形后端初始化和两份程序的图片导出；Mac 桌面实际弹窗尚未人工验证。
 
 不使用 Conda 时，也可在 Python 3.12 虚拟环境中执行 `python -m pip install -r requirements.txt`。Qt 支持范围以本机可安装的 PySide6 版本为准，参见 [Qt for Python 文档](https://doc.qt.io/qtforpython-6/gettingstarted.html)。
 
