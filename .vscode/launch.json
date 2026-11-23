@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "像差程序（显示图窗）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/aberration.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "args": []
+    },
+    {
+      "name": "无像差程序（显示图窗）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/diffraction.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "args": []
+    }
+  ]
+}
