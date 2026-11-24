@@ -1,0 +1,79 @@
+{
+  "program": "zernike_focus",
+  "model": "air; scalar paraxial; ideal pupil-conjugate phase; one scaled 2D FFT at z=f plus axial fixed-point defocus integrals",
+  "parameters": {
+    "wavelength_nm": 550.0,
+    "lens_diameter_mm": 4.0,
+    "focal_length_mm": 50.0,
+    "beam_diameter_mm": 4.0,
+    "aberrations": [
+      {
+        "n": 2,
+        "m": 0,
+        "coefficient_waves": 0.1
+      },
+      {
+        "n": 3,
+        "m": 1,
+        "coefficient_waves": 0.15
+      },
+      {
+        "n": 4,
+        "m": 0,
+        "coefficient_waves": 0.1
+      }
+    ]
+  },
+  "numerics": {
+    "grid_size": 512,
+    "padding_factor": 8,
+    "image_half_width_um": null,
+    "axial_samples": 241,
+    "axial_half_range_um": null,
+    "section_samples": 257,
+    "section_half_width_um": null
+  },
+  "metadata": {
+    "pupil_spacing_um": 9.765625,
+    "pupil_window_mm": 5.0,
+    "fft_size": 4096,
+    "focal_spacing_um": 0.6875000000000371,
+    "zernike_normalization_radius_mm": 2.0,
+    "full_beam_wavefront_rms_waves": 0.20615528128088303,
+    "sampled_transmitted_wavefront_rms_waves": 0.20609796176589312,
+    "maximum_neighbor_phase_step_rad": 0.19204762084463223,
+    "fwhm_definition": "connected half-maximum width through sampled global peak at fixed z=f; not Rayleigh",
+    "axial_half_range_um": 3716.337325254224,
+    "axial_base_step_um": 30.969477710451873,
+    "axial_definition": "fixed transverse line through the z=f sampled peak; exact paraxial z-dependent pupil integral; no extra FFT; one common intensity normalization; no transverse peak tracking",
+    "axial_peak_definition": "strongest peak on the fixed line within scan range, locally refined; boundary maximum is not accepted as a located focus",
+    "section_normalization_W_m2": 6578229659.528184,
+    "section_definition": "XZ at fixed y=peak_y(z=f); YZ at fixed x=peak_x(z=f); no peak tracking; one shared linear intensity normalization for both entire sections"
+  },
+  "results": {
+    "effective_diameter_mm": 4.0,
+    "effective_na": 0.04,
+    "observation_distance_mm": 50.0,
+    "peak_x_um": -2.7500000000000004,
+    "peak_y_um": 0.0,
+    "peak_intensity_W_m2": 6434400919.613827,
+    "incident_power_W": 1.0,
+    "transmitted_power_W": 0.9998865707963225,
+    "geometric_transmission": 1.0,
+    "full_fft_power_W": 0.9998865707964306,
+    "display_power_fraction": 0.808956505659888,
+    "lateral_fwhm_x_um": 8.655183598835592,
+    "half_height_regions_x": 1,
+    "lateral_fwhm_y_um": 7.90721990289394,
+    "half_height_regions_y": 1,
+    "axial_fixed_x_um": -2.7500000000000004,
+    "axial_fixed_y_um": 0.0,
+    "axial_peak_offset_um": -42.25857868508367,
+    "axial_peak_intensity_W_m2": 6489673300.131606,
+    "axial_fwhm_um": 753.0396162985392,
+    "axial_half_max_left_um": -399.3312392730215,
+    "axial_half_max_right_um": 353.7083770255176,
+    "axial_half_height_regions": 1
+  },
+  "diagnostics": []
+}

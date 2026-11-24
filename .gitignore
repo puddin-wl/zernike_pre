@@ -6,7 +6,6 @@ __pycache__/
 .venv/
 .conda/
 results/
-archive/
 .vscode/settings.json
 .vscode/*.local.json
 .env

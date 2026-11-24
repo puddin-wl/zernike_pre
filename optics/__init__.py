@@ -1,7 +1,6 @@
-"""有限孔径薄透镜的标量、近轴波动光学模型。"""
+"""均匀圆光束：理论分辨率与瞳面 Fourier 聚焦。"""
 
-from .config import Numerics, OpticalConfig, ZernikeTerm
-from .simulation import simulate, simulate_aberration, simulate_diffraction
+from .config import Numerics, OpticalConfig, ResolutionConfig, ZernikeTerm
+from .theory import calculate_resolution
 
-__all__ = ["Numerics", "OpticalConfig", "ZernikeTerm", "simulate_diffraction",
-           "simulate_aberration", "simulate"]
+__all__ = ["Numerics", "OpticalConfig", "ResolutionConfig", "ZernikeTerm", "calculate_resolution"]

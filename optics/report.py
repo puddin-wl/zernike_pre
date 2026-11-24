@@ -1,4 +1,4 @@
-"""两个独立程序的精简输出；对比绘图位于 comparison_report.py。"""
+"""居中双列布局：后焦面光斑、轴向曲线、XZ/YZ 和横向截面。"""
 
 import json
 from pathlib import Path
@@ -6,164 +6,126 @@ import numpy as np
 from .display import font_families
 
 
-def _number(value):
-    if value is None:
-        return "未覆盖"
-    return f"{value:.2f}" if abs(value) < 100 else (f"{value:.1f}" if abs(value) < 1000 else f"{value:.0f}")
+def _number(value, digits=4):
+    return "未覆盖" if value is None else f"{value:.{digits}g}"
 
 
 def print_summary(result, verbose=False):
-    label = "无像差" if result.program == "diffraction" else "加载像差"
-    beam = "高斯光" if result.config.beam_type == "gaussian" else "均匀光"
-    print(f"\n{label} / {beam}，观察面 z=f={result.config.focal_length_mm:g} mm")
-    for label, key in (("横向 x", "lateral_fwhm_x_um"),
-                       ("横向 y", "lateral_fwhm_y_um"), ("轴向", "axial_fwhm_um")):
-        print(f"  {label} FWHM：{_number(result.case.metrics[key])} μm")
-    messages = result.diagnostics+result.case.diagnostics
-    if messages:
-        print(f"数值诊断 {len(messages)} 项，详见 summary.json。")
-        if verbose:
-            for message in messages:
-                print("  - "+message)
-
-
-def _image(figure, rect, coordinate, data, title, unit, *, phase=False, limit=None):
-    import matplotlib.pyplot as plt
-    axis = figure.add_axes(rect)
-    scale = 1e3 if unit == "mm" else 1e6
-    points = coordinate*scale
-    if phase:
-        palette = plt.get_cmap("twilight_shifted").copy()
-        palette.set_bad("#EEEEEE")
-        values, low, high = data, -np.pi, np.pi
-    else:
-        palette = "magma"
-        values, low, high = data/max(float(np.max(data)), 1e-300), 0, 1
-    artist = axis.imshow(values, origin="lower", extent=[points[0], points[-1]]*2,
-                         cmap=palette, vmin=low, vmax=high, interpolation="nearest")
-    axis.set(xlabel=f"x ({unit})", ylabel=f"y ({unit})")
-    axis.set_title(title, fontsize=11, pad=12, linespacing=1.6)
-    if limit is not None:
-        axis.set_xlim(-limit, limit)
-        axis.set_ylim(-limit, limit)
-    bar_rect = [rect[0]+rect[2]+0.017, rect[1], 0.007, rect[3]]
-    bar = figure.colorbar(artist, cax=figure.add_axes(bar_rect))
-    if phase:
-        bar.set_ticks([-np.pi, 0, np.pi], labels=["−π", "0", "π"])
-    else:
-        bar.set_ticks([0, 0.5, 1])
-    bar.ax.set_title("rad" if phase else "I/Imax", fontsize=9, pad=10)
-    bar.outline.set_visible(False)
-    bar.ax.tick_params(length=0, labelsize=9)
-    return axis
-
-
-def _curve(figure, rect, result, direction, title, metric_y):
-    axis = figure.add_axes(rect)
-    arrays, metrics = result.case.arrays, result.case.metrics
-    if direction == "z":
-        positions = arrays["axial_coordinate_m"]*1e6
-        values = arrays["axial_intensity_W_m2"]
-        width = metrics["axial_fwhm_um"]
-        if width is not None:
-            axis.set_xlim(max(positions[0], metrics["axial_half_max_left_um"]-0.6*width),
-                          min(positions[-1], metrics["axial_half_max_right_um"]+0.6*width))
-        xlabel = "相对后焦面 Δz (μm)"
-    else:
-        positions = arrays[f"{direction}_line_m"]*1e6-metrics[f"peak_{direction}_um"]
-        values = arrays[f"{direction}_intensity_W_m2"]
-        width = metrics[f"lateral_fwhm_{direction}_um"]
-        if width is not None:
-            axis.set_xlim(-2.1*width, 2.1*width)
-        xlabel = "相对主峰位置 (μm)"
-    axis.plot(positions, values/max(float(values.max()), 1e-300), color="#3576C9", linewidth=1.8)
-    axis.axhline(0.5, color="#BBBBBB", linewidth=0.7, linestyle=":", zorder=0)
-    axis.set(ylim=(-0.035, 1.08), yticks=[0, 0.5, 1])
-    axis.set_title(title, fontsize=11, pad=12)
-    axis.set_xlabel(xlabel, fontsize=10, labelpad=7)
-    axis.set_ylabel("I/Imax", fontsize=10, labelpad=7)
-    axis.spines[["top", "right"]].set_visible(False)
-    axis.tick_params(labelsize=9, length=3)
-    figure.text(rect[0]+rect[2]/2, metric_y, f"FWHM = {_number(width)} μm", ha="center", fontsize=11)
-
-
-def _section(figure, rect, result, direction, normalization, show_y=True):
-    arrays = result.case.arrays
-    plane, transverse, fixed_name = ("xz", "x", "y") if direction == "x" else ("yz", "y", "x")
-    coordinate = arrays[f"{plane}_{transverse}_coordinate_m"]*1e6
-    z_coordinate = arrays["section_z_offset_m"]*1e6
-    values = arrays[f"{plane}_intensity_W_m2"]/normalization
-    fixed = float(arrays[f"{plane}_fixed_{fixed_name}_m"])*1e6
-    if abs(fixed) < 0.005:
-        fixed = 0.0
-    axis = figure.add_axes(rect)
-    artist = axis.pcolormesh(coordinate, z_coordinate, values, shading="auto",
-                             cmap="magma", vmin=0, vmax=1, rasterized=True)
-    axis.axhline(0, color="white", linestyle="--", linewidth=0.8, alpha=0.8)
-    axis.set(xlim=(coordinate[0], coordinate[-1]), ylim=(z_coordinate[0], z_coordinate[-1]),
-             xlabel=f"{transverse} (μm)", ylabel="Δz = z−f (μm)")
-    axis.set_title(f"{plane.upper()} 光强切面\n{fixed_name} = {fixed:.2f} μm",
-                   fontsize=11, pad=12, linespacing=1.6)
-    if not show_y:
-        # 两张切面共用同一 z 轴范围，右图省略重复的纵轴标注。
-        axis.set_ylabel("")
-        axis.tick_params(axis="y", left=False, labelleft=False)
-    bar = figure.colorbar(artist, cax=figure.add_axes([rect[0]+rect[2]+0.017, rect[1], 0.007, rect[3]]))
-    bar.set_ticks([0, 0.5, 1])
-    bar.ax.set_title("I/Imax", fontsize=9, pad=10)
-    bar.outline.set_visible(False)
-    bar.ax.tick_params(length=0, labelsize=9)
-    return axis
+    metrics = result.metrics
+    print(f"\n{result.program}：均匀圆光束，观察面 z=f={result.config.focal_length_mm:g} mm")
+    print(f"  有效直径：{metrics['effective_diameter_mm']:g} mm；有效 NA：{metrics['effective_na']:.6g}")
+    if result.program == "fourier_focus":
+        print(f"  瑞利（Rayleigh）分辨距离：{_number(metrics['lateral_rayleigh_um'], 6)} μm（由数值焦斑第一暗环测得）")
+    for direction in ("x", "y"):
+        print(f"  横向 {direction} 光强 FWHM：{_number(metrics[f'lateral_fwhm_{direction}_um'])} μm")
+    print(f"  主峰坐标：x={metrics['peak_x_um']:.4g} μm，y={metrics['peak_y_um']:.4g} μm")
+    print(f"  轴向固定纵线：x={metrics['axial_fixed_x_um']:.4g} μm，y={metrics['axial_fixed_y_um']:.4g} μm")
+    print(f"  轴向光强 FWHM：{_number(metrics['axial_fwhm_um'], 6)} μm")
+    print(f"  轴向主峰相对 z=f 偏移：{_number(metrics['axial_peak_offset_um'], 6)} μm")
+    if result.program == "fourier_focus":
+        print(f"  轴向瑞利距离：{_number(metrics['axial_rayleigh_um'], 6)} μm（由两侧近零第一极小值测得）")
+    for message in result.diagnostics:
+        print("  提示："+message)
+    if verbose:
+        print(f"  FFT：{result.metadata['fft_size']} × {result.metadata['fft_size']}；"
+              f"焦面采样：{result.metadata['focal_spacing_um']:.6g} μm")
+        print(f"  透射功率：{metrics['transmitted_power_W']:.8g} W；"
+              f"全 FFT 积分功率：{metrics['full_fft_power_W']:.8g} W")
+        print(f"  轴向扫描：±{result.metadata['axial_half_range_um']:.6g} μm；"
+              f"基础步长：{result.metadata['axial_base_step_um']:.6g} μm")
 
 
 def plot_result(result, destination):
     import matplotlib.pyplot as plt
-
-    cfg, arrays = result.config, result.case.arrays
-    beam = "高斯入射" if cfg.beam_type == "gaussian" else "均匀入射"
+    cfg, arrays, metrics = result.config, result.arrays, result.metrics
+    points = arrays["focal_coordinate_m"]*1e6
+    image = arrays["focal_intensity_W_m2"]
+    peak = metrics["peak_intensity_W_m2"]
     with plt.rc_context({"font.family": font_families(), "font.size": 10,
-                         "axes.unicode_minus": False, "text.color": "#222222",
-                         "axes.labelcolor": "#444444", "xtick.color": "#555555", "ytick.color": "#555555",
-                         "axes.edgecolor": "#AAAAAA", "axes.linewidth": 0.7}):
-        figure = plt.figure(figsize=(16, 9), facecolor="white")
-        figure.text(0.06, 0.968,
-                    f"{beam}    λ = {cfg.wavelength_nm:g} nm    f = {cfg.focal_length_mm:g} mm    "
-                    f"口径 = {cfg.lens_diameter_mm:g} mm    光束直径 = {cfg.beam_diameter_mm:g} mm",
-                    fontsize=10)
-        source_limit = 1.25*cfg.beam_diameter_mm/2
-        focal_title = f"焦平面光斑\nz = f = {cfg.focal_length_mm:g} mm"
-        section_max = max(float(arrays["xz_intensity_W_m2"].max()),
-                          float(arrays.get("yz_intensity_W_m2", arrays["xz_intensity_W_m2"]).max()), 1e-300)
-        if result.program == "diffraction":
-            _image(figure, [0.075, 0.49, 0.21, 0.37333], arrays["pupil_coordinate_m"],
-                   arrays["input_intensity_W_m2"], "输入光强（前焦面）", "mm", limit=source_limit)
-            _image(figure, [0.390, 0.49, 0.21, 0.37333], arrays["presentation_coordinate_m"],
-                   arrays["presentation_focal_image_W_m2"], focal_title, "μm")
-            _section(figure, [0.705, 0.49, 0.21, 0.37333], result, "x", section_max)
-            _curve(figure, [0.10, 0.17, 0.34, 0.21], result, "x", "横向截面（圆对称，x=y）", 0.065)
-            _curve(figure, [0.60, 0.17, 0.34, 0.21], result, "z", "轴向光强", 0.065)
-        else:
-            terms = [term for term in cfg.aberrations if term.coefficient_waves]
-            modes = ";  ".join(f"Z({term.n},{term.m}) = {term.coefficient_waves:g} waves" for term in terms[:3])
-            if len(terms) > 3:
-                modes += f";  共 {len(terms)} 项"
-            figure.text(0.06, 0.938, modes or "像差系数为 0", color="#666666", fontsize=9)
-            _image(figure, [0.060, 0.56, 0.16, 0.28444], arrays["pupil_coordinate_m"],
-                   arrays["input_intensity_W_m2"], "输入光强（前焦面）", "mm", limit=source_limit)
-            visible = arrays["input_intensity_W_m2"] > arrays["input_intensity_W_m2"].max()*1e-4
-            phase = np.ma.array(arrays["input_phase_rad"], mask=~visible)
-            _image(figure, [0.300, 0.56, 0.16, 0.28444], arrays["pupil_coordinate_m"], phase,
-                   f"输入相位（加载后）\nRMS = {result.metadata['zernike_rms_excluding_piston_waves']:.3g} waves",
-                   "mm", phase=True, limit=1.13*max(cfg.zernike_radius_mm, cfg.beam_diameter_mm/2))
-            _image(figure, [0.540, 0.56, 0.16, 0.28444], arrays["presentation_coordinate_m"],
-                   arrays["presentation_focal_image_W_m2"], focal_title, "μm")
-            _curve(figure, [0.800, 0.56, 0.17, 0.28444], result, "z", "轴向光强", 0.477)
-            _section(figure, [0.060, 0.13, 0.16, 0.30222], result, "x", section_max)
-            _section(figure, [0.300, 0.13, 0.16, 0.30222], result, "y", section_max, show_y=False)
-            _curve(figure, [0.565, 0.13, 0.17, 0.30222], result, "x", "横向 x 截面", 0.038)
-            _curve(figure, [0.805, 0.13, 0.17, 0.30222], result, "y", "横向 y 截面", 0.038)
-        figure.text(0.06, 0.010, "观察面固定 z=f；切面共用线性色标，虚线为 z=f；轴向扫描不用于重新调焦。",
-                    color="#666666", fontsize=8)
+                         "axes.unicode_minus": False, "axes.spines.top": False,
+                         "axes.spines.right": False}):
+        figure, grid = plt.subplots(3, 2, figsize=(14, 13.5))
+        axes = grid.ravel()
+        figure.subplots_adjust(left=0.10, right=0.90, bottom=0.10, top=0.82, wspace=0.38, hspace=0.88)
+        label = "泽尼克相位聚焦" if result.program == "zernike_focus" else "均匀圆孔径聚焦"
+        figure.text(0.5, 0.965, label, fontsize=16, ha="center")
+        figure.text(0.5, 0.93,
+                    f"λ = {cfg.wavelength_nm:g} nm    f = {cfg.focal_length_mm:g} mm    "
+                    f"透镜直径 = {cfg.lens_diameter_mm:g} mm    光束直径 = {cfg.beam_radius*2e3:g} mm    "
+                    f"有效 NA = {cfg.effective_na:.4g}", fontsize=10, ha="center")
+        terms = [t for t in cfg.aberrations if t.coefficient_waves]
+        description = ";  ".join(f"Z({t.n},{t.m}): {t.coefficient_waves:g}" for t in terms[:4])
+        if len(terms) > 4:
+            description += f";  共 {len(terms)} 项，完整列表见 summary.json"
+        phase_description = "系数（waves）："+description if terms else "相位为零"
+        if result.program == "fourier_focus":
+            phase_description += (f"    瑞利分辨距离 = {_number(metrics['lateral_rayleigh_um'], 6)} μm"
+                                  "（数值焦斑第一暗环）")
+        figure.text(0.5, 0.897, phase_description, fontsize=10, color="#555555", ha="center")
+        dx = result.metadata["focal_spacing_um"]
+        artist = axes[0].imshow(image/peak, origin="lower", cmap="magma", interpolation="bilinear",
+                                extent=[points[0]-dx/2, points[-1]+dx/2]*2, vmin=0, vmax=1)
+        axes[0].set(title="（A）后焦面光强（z=f）", xlabel="x (μm)", ylabel="y (μm)")
+        # 色条使用独立的子坐标轴，避免 colorbar 挤压方形图并将其推到列右侧。
+        bar = figure.colorbar(artist, cax=axes[0].inset_axes([1.04, 0, 0.035, 1]))
+        bar.set_label("I/Imax")
+        axial = axes[1]
+        offsets = arrays["axial_offset_m"]*1e6
+        axial.plot(offsets, arrays["axial_intensity_W_m2"]/metrics["axial_peak_intensity_W_m2"],
+                   color="#2674B5", linewidth=1.6)
+        axial.axvline(0, color="#777777", linestyle="--", linewidth=0.8, label="原后焦面 z=f")
+        axial.axhline(0.5, color="#999999", linestyle=":", linewidth=0.8)
+        if metrics["axial_peak_offset_um"] is not None:
+            axial.plot(metrics["axial_peak_offset_um"], 1, "o", color="#C47A18", markersize=4)
+        if metrics["axial_fwhm_um"] is not None:
+            axial.axvspan(metrics["axial_half_max_left_um"], metrics["axial_half_max_right_um"],
+                          color="#5BAA85", alpha=0.13)
+        axial.set(title=f"（B）轴向光强曲线 I(z)\n固定 x={metrics['axial_fixed_x_um']:.3g}，y={metrics['axial_fixed_y_um']:.3g} μm",
+                  xlabel="相对后焦面 Δz (μm)", ylabel="归一化光强 I/Imax", ylim=(-0.025, 1.08))
+        axial.legend(loc="upper right", fontsize=8, frameon=False)
+        axial_label = (f"轴向 FWHM = {_number(metrics['axial_fwhm_um'], 6)} μm；"
+                       f"主峰偏移 = {_number(metrics['axial_peak_offset_um'], 5)} μm")
+        if result.program == "fourier_focus":
+            axial_label += f"\n轴向瑞利距离 = {_number(metrics['axial_rayleigh_um'], 6)} μm"
+            for side in ("left", "right"):
+                position = metrics[f"axial_first_min_{side}_um"]
+                if position is not None:
+                    axial.axvline(position, color="#C47A18", linewidth=0.9, linestyle="--")
+        axial.text(0.5, -0.32, axial_label, transform=axial.transAxes,
+                   ha="center", va="top", fontsize=10, linespacing=1.6)
+        section_norm = result.metadata["section_normalization_W_m2"]
+        for axis, plane, direction, fixed, panel in (
+            (axes[2], "xz", "x", "y", "C"), (axes[3], "yz", "y", "x", "D")
+        ):
+            transverse = arrays[f"{plane}_{direction}_coordinate_m"]*1e6
+            section = axis.pcolormesh(transverse, arrays["section_z_offset_m"]*1e6,
+                                     arrays[f"{plane}_intensity_W_m2"]/section_norm,
+                                     shading="auto", cmap="magma", vmin=0, vmax=1, rasterized=True)
+            axis.axhline(0, color="white", linewidth=0.8, linestyle="--", alpha=0.8)
+            axis.axvline(metrics[f"peak_{direction}_um"], color="white", linewidth=0.6, linestyle=":", alpha=0.5)
+            axis.set(title=f"（{panel}）{plane.upper()} 二维光强切面\n固定 {fixed}={metrics[f'peak_{fixed}_um']:.3g} μm",
+                     xlabel=f"{direction} (μm)", ylabel="相对后焦面 Δz (μm)")
+        section_bar = figure.colorbar(section, cax=axes[3].inset_axes([1.04, 0, 0.035, 1]))
+        section_bar.set_label("I/Imax（两切面共用）", fontsize=9)
+        for axis, direction, fixed, panel in ((axes[4], "x", "y", "E"), (axes[5], "y", "x", "F")):
+            values = arrays[f"{direction}_intensity_W_m2"]/peak
+            axis.plot(points, values, color="#2674B5", linewidth=1.6)
+            axis.axhline(0.5, color="#999999", linewidth=0.8, linestyle=":")
+            if result.program == "fourier_focus":
+                for side in ("left", "right"):
+                    position = metrics[f"first_dark_{side}_{direction}_um"]
+                    if position is not None:
+                        axis.axvline(position, color="#C47A18", linewidth=0.9, linestyle="--")
+            axis.set(xlabel=f"{direction} (μm)", ylabel="I/Imax", ylim=(-0.025, 1.08),
+                     title=f"（{panel}）横向 {direction} 截面（{fixed}={metrics[f'peak_{fixed}_um']:.3g} μm）")
+            axis.text(0.5, -0.30, f"FWHM = {_number(metrics[f'lateral_fwhm_{direction}_um'])} μm",
+                      transform=axis.transAxes, ha="center", fontsize=11)
+        note = ("橙色虚线：横向第一暗环、轴向近零第一极小值；绿色区域：轴向半高全宽。横向光斑固定在 z=f。"
+                if result.program == "fourier_focus" else
+                "轴向沿固定纵线扫描，宽度与主峰偏移分别报告；横向光斑保持在原后焦面 z=f，不随扫描重新调焦。")
+        figure.text(0.5, 0.034, note, fontsize=9, color="#555555", ha="center")
+        figure.text(0.5, 0.015, "XZ/YZ 共用一个线性色标，不逐层归一化；白色虚线为 z=f，白色点线为轴向曲线所在纵线。",
+                    fontsize=9, color="#555555", ha="center")
         figure.savefig(destination, dpi=160, facecolor="white")
         figure.savefig(Path(destination).with_suffix(".svg"), facecolor="white")
     return figure
@@ -173,7 +135,7 @@ def save_result(result, directory):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     (directory/"summary.json").write_text(
-        json.dumps(result.summary(), ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8",
+        json.dumps(result.summary(), ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8"
     )
-    np.savez_compressed(directory/"fields.npz", **result.case.arrays)
+    np.savez_compressed(directory/"fields.npz", **result.arrays)
     return plot_result(result, directory/"overview.png")

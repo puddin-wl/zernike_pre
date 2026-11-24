@@ -2,19 +2,28 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "像差程序（显示图窗）",
+      "name": "程序三：泽尼克相位聚焦",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/aberration.py",
+      "program": "${workspaceFolder}/zernike_focus.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "args": []
     },
     {
-      "name": "无像差程序（显示图窗）",
+      "name": "程序二：均匀光傅里叶聚焦",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/diffraction.py",
+      "program": "${workspaceFolder}/fourier_focus.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "args": []
+    },
+    {
+      "name": "程序一：理论分辨率",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/resolution.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "args": []

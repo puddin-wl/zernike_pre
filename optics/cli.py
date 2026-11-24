@@ -1,13 +1,13 @@
-"""两个独立程序的公共输入与启动逻辑；对比程序单独封装。"""
+"""三个入口的命令行接口；理论程序不加载图形和数值模拟依赖。"""
 
 import argparse
 from dataclasses import replace
+import json
 from pathlib import Path
 import sys
 
 from .config import Numerics, ZernikeTerm
-from .display import configure_display
-from .simulation import simulate_aberration, simulate_diffraction
+from .theory import calculate_resolution
 
 
 def _term(text):
@@ -19,41 +19,47 @@ def _term(text):
 
 
 def _parser(program):
-    label = "无像差衍射计算" if program == "diffraction" else "前焦面 Zernike 像差计算"
-    parser = argparse.ArgumentParser(description=f"{label}；观察面固定在透镜后 z=f。")
+    labels = {"resolution": "初始介质与样品介质的理想近轴分辨率（纯数值）",
+              "fourier_focus": "均匀圆光束的后焦面 Fourier 聚焦",
+              "zernike_focus": "瞳面共轭面加载 Zernike 相位后的 Fourier 聚焦"}
+    parser = argparse.ArgumentParser(description=labels[program])
+    if program == "resolution":
+        medium = parser.add_mutually_exclusive_group()
+        medium.add_argument("--immersion-medium", help="初始介质：air、water、oil 或数值折射率；默认 air")
+        medium.add_argument("--immersion-refractive-index", dest="immersion_medium", type=float,
+                            help="直接指定初始介质折射率，与 --immersion-medium 二选一")
+        parser.add_argument("--sample-refractive-index", type=float, help="样品介质折射率，默认 1.37")
     for name in ("wavelength-nm", "lens-diameter-mm", "focal-length-mm", "beam-diameter-mm"):
-        parser.add_argument("--"+name, type=float)
-    parser.add_argument("--beam", choices=("gaussian", "uniform", "both"))
-    if program == "aberration":
-        parser.add_argument("--zernike-radius-mm", type=float)
+        parser.add_argument("--"+name, type=float,
+                            help="瞳面等效光束直径，默认随透镜直径变化" if name == "beam-diameter-mm" else None)
+    if program == "zernike_focus":
         group = parser.add_mutually_exclusive_group()
-        group.add_argument("--zernike", type=_term, action="append", help="n,m,系数waves；可重复，1=2π rad RMS")
-        group.add_argument("--no-aberrations", action="store_true", help="清空全部系数，验证与程序一一致")
-    parser.add_argument("--grid-size", type=int, default=768)
-    parser.add_argument("--image-samples", type=int, default=257)
-    parser.add_argument("--axial-samples", type=int, default=121)
-    for name in ("window-mm", "image-half-width-um", "axial-half-range-um"):
-        parser.add_argument("--"+name, type=float)
-    parser.add_argument("--output", type=Path, help="指定输出目录")
-    parser.add_argument("--no-show", action="store_true", help="只保存结果，不显示图窗")
-    parser.add_argument("--verbose", action="store_true", help="显示计算进度及数值诊断")
+        group.add_argument("--zernike", type=_term, action="append", help="n,m,系数waves；可重复输入")
+        group.add_argument("--no-aberrations", action="store_true", help="将相位清零，验证与程序二一致")
+    if program != "resolution":
+        parser.add_argument("--grid-size", type=int, help="瞳面采样边长，默认 512")
+        parser.add_argument("--padding-factor", type=int, help="FFT 零填充倍率，默认 8")
+        parser.add_argument("--image-half-width-um", type=float, help="后焦面显示半宽，默认自动覆盖主峰")
+        parser.add_argument("--axial-samples", type=int, help="轴向扫描点数，不小于 33 的奇数，默认 241")
+        parser.add_argument("--axial-half-range-um", type=float, help="相对 z=f 的轴向扫描半范围，默认自动设置")
+        parser.add_argument("--section-samples", type=int, help="XZ/YZ 横向采样点数，默认 257，要求奇数")
+        parser.add_argument("--section-half-width-um", type=float, help="XZ/YZ 相对固定纵线的横向半宽，默认自动设置")
+        parser.add_argument("--no-show", action="store_true", help="仅保存结果，不弹出图窗")
+        parser.add_argument("--verbose", action="store_true", help="打印采样与功率诊断")
+    parser.add_argument("--output", type=Path, help="输出目录，默认 results/程序名")
     return parser
 
 
-def _run(default_config, program):
-    parser = _parser(program)
-    args = parser.parse_args()
+def _arguments(default_config, program):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    configure_display(no_show=args.no_show)
-    from .report import print_summary, save_result
-    import matplotlib.pyplot as plt
-
-    names = ["wavelength_nm", "lens_diameter_mm", "focal_length_mm", "beam_diameter_mm"]
-    if program == "aberration":
-        names.append("zernike_radius_mm")
+    parser = _parser(program)
+    args = parser.parse_args()
+    names = ("wavelength_nm", "lens_diameter_mm", "focal_length_mm", "beam_diameter_mm")
+    if program == "resolution":
+        names += ("immersion_medium", "sample_refractive_index")
     updates = {name: getattr(args, name) for name in names if getattr(args, name) is not None}
-    if program == "diffraction":
+    if program != "zernike_focus":
         updates["aberrations"] = ()
     elif args.zernike is not None:
         updates["aberrations"] = tuple(args.zernike)
@@ -61,31 +67,69 @@ def _run(default_config, program):
         updates["aberrations"] = ()
     try:
         config = replace(default_config, **updates)
-        numerics = Numerics(**{name: getattr(args, name) for name in (
-            "grid_size", "image_samples", "axial_samples", "window_mm",
-            "image_half_width_um", "axial_half_range_um")})
     except ValueError as error:
         parser.error(str(error))
-    beam_types = ("gaussian", "uniform") if args.beam == "both" else (args.beam or config.beam_type,)
-    root = args.output or Path(__file__).resolve().parents[1]/"results"/program
-    calculate = simulate_diffraction if program == "diffraction" else simulate_aberration
-    for beam in beam_types:
-        callback = (lambda message: print(message, flush=True)) if args.verbose else None
-        result = calculate(replace(config, beam_type=beam), numerics, progress=callback)
-        print_summary(result, verbose=args.verbose)
-        # 默认每种程序/光束只保留最新结果，避免再次积累运行目录。
-        directory = root/beam if args.output is None or len(beam_types) > 1 else root
-        save_result(result, directory)
-        print(f"图片：{(directory/'overview.png').resolve()}\n", flush=True)
-        if args.no_show:
-            plt.close("all")
-    if not args.no_show:
+    directory = args.output or Path(__file__).resolve().parents[1]/"results"/program
+    return parser, args, config, directory
+
+
+def _save_json(data, destination):
+    destination.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+
+
+def run_resolution(default_config):
+    parser, args, config, directory = _arguments(default_config, "resolution")
+    sample_refractive_index = config.sample_refractive_index
+    try:
+        result = calculate_resolution(config, sample_refractive_index)
+    except ValueError as error:
+        parser.error(str(error))
+    lines = [
+        "均匀圆光束：理想近轴分辨率",
+        f"真空波长：{config.wavelength_nm:g} nm；初始介质中的工作焦距：{config.focal_length_mm:g} mm",
+        f"透镜直径：{config.lens_diameter_mm:g} mm；光束直径：{config.beam_radius*2e3:g} mm",
+        f"有效直径：{config.effective_radius*2e3:g} mm；有效 NA：{config.effective_na:.6g}",
+        "介质                 横向 Rayleigh (μm)    纵向估计 (μm，非 FWHM)",
+    ]
+    for key, label in (("initial_medium", f"{config.immersion_label} n={config.immersion_refractive_index:g}"),
+                       ("sample_medium", f"样品 n={sample_refractive_index:g}")):
+        values = result["results"][key]
+        lines.append(f"{label:<18} {values['lateral_rayleigh_um']:>12.6g}          {values['axial_resolution_um']:>12.6g}")
+    ratio = sample_refractive_index/config.immersion_refractive_index
+    lines.append(f"进入样品后：横向不变，轴向数值为初始介质的 {ratio:.6g} 倍（固定入射 NA 的理想近轴模型）。")
+    lines.extend("提示："+message for message in result["diagnostics"])
+    directory.mkdir(parents=True, exist_ok=True)
+    _save_json(result, directory/"summary.json")
+    (directory/"summary.txt").write_text("\n".join(lines)+"\n", encoding="utf-8")
+    print("\n".join(lines))
+    print(f"数值结果：{(directory/'summary.txt').resolve()}")
+
+
+def run_focus(default_config, *, aberrated=False, default_numerics=None):
+    program = "zernike_focus" if aberrated else "fourier_focus"
+    parser, args, config, directory = _arguments(default_config, program)
+    try:
+        numerics = replace(default_numerics or Numerics(), **{
+            name: getattr(args, name) for name in (
+                "grid_size", "padding_factor", "image_half_width_um", "axial_samples", "axial_half_range_um",
+                "section_samples", "section_half_width_um")
+            if getattr(args, name) is not None
+        })
+    except ValueError as error:
+        parser.error(str(error))
+    from .display import configure_display
+    configure_display(no_show=args.no_show)
+    from .simulation import simulate_focus
+    from .report import print_summary, save_result
+    import matplotlib.pyplot as plt
+    try:
+        result = simulate_focus(config, numerics, aberrated=aberrated)
+    except ValueError as error:
+        parser.error(str(error))
+    print_summary(result, verbose=args.verbose)
+    figure = save_result(result, directory)
+    print(f"图片：{(directory/'overview.png').resolve()}")
+    if args.no_show:
+        plt.close(figure)
+    else:
         plt.show(block=True)
-
-
-def run_diffraction(default_config):
-    _run(default_config, "diffraction")
-
-
-def run_aberration(default_config):
-    _run(default_config, "aberration")
