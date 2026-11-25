@@ -51,12 +51,26 @@ def plot_result(result, destination):
     points = arrays["focal_coordinate_m"]*1e6
     image = arrays["focal_intensity_W_m2"]
     peak = metrics["peak_intensity_W_m2"]
+    aberrated = result.program == "zernike_focus"
+    terms = [t for t in cfg.aberrations if t.coefficient_waves]
+    descriptions = [f"Z({t.n},{t.m}): {t.coefficient_waves:g}" for t in terms[:4]]
+    if aberrated:
+        # 每行最多两个模式，避免复合像差的系数挤出标题区域。
+        description = "\n".join(";  ".join(descriptions[i:i+2]) for i in range(0, len(descriptions), 2))
+    else:
+        description = ";  ".join(descriptions)
+    if len(terms) > 4:
+        description += f"\n共 {len(terms)} 项，完整列表见 summary.json"
+    phase_description = "系数（waves）："+description if terms else "相位为零"
     with plt.rc_context({"font.family": font_families(), "font.size": 10,
                          "axes.unicode_minus": False, "axes.spines.top": False,
                          "axes.spines.right": False, "axes.titlepad": 10, "axes.labelpad": 7}):
         figure = plt.figure(figsize=(14, 15), layout="constrained")
         figure.get_layout_engine().set(w_pad=0.14, h_pad=0.10, wspace=0.12, hspace=0.08)
-        outer_grid = figure.add_gridspec(3, 1, height_ratios=(0.30, 3.2, 0.20))
+        header_height = 0.30 + 0.12*phase_description.count("\n")
+        outer_grid = figure.add_gridspec(
+            3, 1, height_ratios=(header_height, 3.2, 0.32 if aberrated else 0.20),
+        )
         header_axis = figure.add_subplot(outer_grid[0])
         footer_axis = figure.add_subplot(outer_grid[2])
         grid = outer_grid[1].subgridspec(
@@ -79,11 +93,6 @@ def plot_result(result, destination):
                 f"λ = {cfg.wavelength_nm:g} nm    f = {cfg.focal_length_mm:g} mm    有效 NA = {cfg.effective_na:.4g}\n"
                 f"透镜直径 = {cfg.lens_diameter_mm:g} mm    光束直径 = {cfg.beam_radius*2e3:g} mm"
             )
-        terms = [t for t in cfg.aberrations if t.coefficient_waves]
-        description = ";  ".join(f"Z({t.n},{t.m}): {t.coefficient_waves:g}" for t in terms[:4])
-        if len(terms) > 4:
-            description += f";  共 {len(terms)} 项，完整列表见 summary.json"
-        phase_description = "系数（waves）："+description if terms else "相位为零"
         if result.program == "fourier_focus":
             phase_description += (f"    瑞利分辨距离 = {_number(metrics['lateral_rayleigh_um'], 6)} μm"
                                   "（数值焦斑第一暗环）")
@@ -123,7 +132,8 @@ def plot_result(result, destination):
         )
         if result.program == "zernike_focus":
             axial_label = (
-                f"轴向 FWHM = {_number(metrics['axial_fwhm_um'], 6)} μm（最外侧半高交点）"
+                f"轴向 FWHM = {_number(metrics['axial_fwhm_um'], 6)} μm\n"
+                "（最外侧半高交点间距）"
                 f"\n最大光强位置 = {_number(metrics['axial_peak_offset_um'], 5)} μm"
             )
         if result.program == "fourier_focus":
@@ -169,6 +179,14 @@ def plot_result(result, destination):
         if multiple:
             note = "绿色：最左与最右半高交点之间的轴向 FWHM 测量范围，包含中间凹槽；最大光强位置不决定宽度区间。"
         footer_note = note+"\n"+f"XZ/YZ 共用一个线性色标，不逐层归一化；白色虚线为 {reference}，白色点线为轴向曲线所在纵线。"
+        if aberrated:
+            width_note = ("绿色范围包含中间低于半高的凹槽；最大光强位置不决定宽度区间。"
+                          if multiple else "绿色范围为轴向最外侧半高交点之间的测量区间。")
+            footer_note = (
+                f"{width_note}\n"
+                f"横向光斑固定在参考焦面 {reference}，不随轴向扫描重新调焦。\n"
+                f"XZ/YZ 共用线性色标；白色虚线为 {reference}，白色点线为轴向扫描纵线。"
+            )
         footer_axis.text(0.5, 0.5, footer_note, transform=footer_axis.transAxes,
                          fontsize=9, color="#555555", ha="center", va="center", linespacing=1.8)
         figure.savefig(destination, dpi=160, facecolor="white")
