@@ -17,13 +17,19 @@ def longitudinal_sections(pupil, coordinate, config, numerics, z_offsets, x_fixe
     xz = np.empty((len(z_offsets), len(transverse_offsets)))
     yz = np.empty_like(xz)
     for index, offset in enumerate(z_offsets):
-        z = config.focal_length+offset
-        phase = np.pi/config.wavelength*((1/z-1/config.focal_length)*radius_squared-2*projection/z)
+        if config.uses_na:
+            phase = -np.pi/config.wavelength*(config.effective_na**2*offset*radius_squared
+                                              + 2*config.effective_na*projection)
+            frequency_scale = config.effective_na/config.wavelength
+        else:
+            z = config.focal_length+offset
+            phase = np.pi/config.wavelength*((1/z-1/config.focal_length)*radius_squared-2*projection/z)
+            frequency_scale = 1/(config.wavelength*z)
         plane = pupil*np.exp(1j*phase)
         # 先沿固定坐标方向求和，再在另一方向求一维 Fourier 积分。
         # 横向坐标 = 固定主峰坐标 + transverse_offsets，两切面共用同一计算核。
-        kernel = np.exp(-2j*np.pi*transform_argument/(config.wavelength*z))
-        factor = spacing**2/(config.wavelength*z)
+        kernel = np.exp(-2j*np.pi*transform_argument*frequency_scale)
+        factor = spacing**2*frequency_scale
         xz[index] = np.abs(np.einsum("ij,j->i", kernel, plane.sum(axis=0))*factor)**2
         yz[index] = np.abs(np.einsum("ij,j->i", kernel, plane.sum(axis=1))*factor)**2
     return {

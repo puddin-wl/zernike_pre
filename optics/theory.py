@@ -7,7 +7,13 @@ from .config import OpticalConfig, ResolutionConfig
 
 def optical_parameters(config: OpticalConfig):
     parameters = asdict(config)
-    parameters["beam_diameter_mm"] = config.beam_radius * 2e3
+    parameters["input_mode"] = "numerical_aperture" if config.uses_na else "geometry"
+    if config.uses_na:
+        # 被忽略的尺寸不作为实际物镜参数写入结果。
+        for name in ("lens_diameter_mm", "focal_length_mm", "beam_diameter_mm"):
+            parameters[name] = None
+    else:
+        parameters["beam_diameter_mm"] = config.beam_radius * 2e3
     if isinstance(config, ResolutionConfig):
         parameters["immersion_refractive_index"] = config.immersion_refractive_index
     return parameters
@@ -40,11 +46,14 @@ def calculate_resolution(config: OpticalConfig, sample_refractive_index: float |
         diagnostics.append("样品中 NA/n_s > 0.2：组织侧的近轴轴向公式误差可能显著，请使用更完整的传播模型。")
     return {
         "program": "resolution",
-        "model": "scalar paraxial; working focal length in initial medium; normal planar interface into sample; conserved n*sin(theta); no mismatch-induced aberrations",
+        "model": ("scalar paraxial; direct effective NA; fully filled uniform pupil; " if config.uses_na else
+                  "scalar paraxial; working focal length in initial medium; ") +
+                 "normal planar interface into sample; conserved n*sin(theta); no mismatch-induced aberrations",
         "parameters": parameters,
-        "effective_diameter_mm": config.effective_radius * 2e3,
+        "effective_diameter_mm": None if config.uses_na else config.effective_radius * 2e3,
         "formulas": {
-            "effective_na": "n_initial*min(D_beam, D_lens)/(2*f_working)",
+            "effective_na": ("direct numerical_aperture; fully filled uniform pupil" if config.uses_na else
+                             "n_initial*min(D_beam, D_lens)/(2*f_working)"),
             "lateral_rayleigh": "0.61*lambda_vacuum/NA",
             "axial_resolution": "2*n*lambda_vacuum/NA^2 (paraxial estimate; not FWHM)",
         },

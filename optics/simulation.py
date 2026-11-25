@@ -29,7 +29,11 @@ class FocusResult:
             parameters.pop("aberrations")
         return {
             "program": self.program,
-            "model": "air; scalar paraxial; ideal pupil-conjugate phase; one scaled 2D FFT at z=f plus axial fixed-point defocus integrals",
+            "model": (
+                "air; scalar paraxial; direct effective NA; fully filled normalized uniform pupil; one scaled 2D FFT at reference focus plus delta_z defocus integrals; no lens dimensions or focal length"
+                if self.config.uses_na else
+                "air; scalar paraxial; ideal pupil-conjugate phase; one scaled 2D FFT at z=f plus axial fixed-point defocus integrals"
+            ),
             "parameters": parameters,
             "numerics": asdict(self.numerics),
             "metadata": self.metadata,
@@ -43,18 +47,20 @@ def simulate_focus(config: OpticalConfig, numerics: Numerics | None = None, *, a
     if not aberrated:
         config = replace(config, aberrations=())
     # 只采样实际透射区域，过填充时被挡住的外围不必占据计算窗口。
-    window = 2.5 * config.effective_radius
+    effective_radius = 1.0 if config.uses_na else config.effective_radius
+    beam_radius = 1.0 if config.uses_na else config.beam_radius
+    window = 2.5 * effective_radius
     spacing = window / numerics.grid_size
     coordinate = (np.arange(numerics.grid_size)-numerics.grid_size//2)*spacing
     x, y = coordinate[None, :], coordinate[:, None]
     radius = np.hypot(x, y)
-    support = radius <= config.effective_radius
-    phase = phase_on_beam(x, y, config.beam_radius, config.aberrations)
+    support = radius <= effective_radius
+    phase = phase_on_beam(x, y, beam_radius, config.aberrations)
     # 入射光束解析功率为 1 W；截光后不重新归一化功率。
-    amplitude = 1 / np.sqrt(np.pi*config.beam_radius**2)
+    amplitude = 1 / np.sqrt(np.pi*beam_radius**2)
     pupil = amplitude * support * np.exp(1j*phase)
     transmitted_power = float(np.sum(np.abs(pupil)**2)*spacing**2)
-    analytic_transmission = (config.effective_radius/config.beam_radius)**2
+    analytic_transmission = (effective_radius/beam_radius)**2
     messages = config.diagnostics()
     if abs(transmitted_power/analytic_transmission-1) > 0.005:
         messages.append("离散圆孔径面积误差超过 0.5%，请增加 --grid-size。")
@@ -70,13 +76,14 @@ def simulate_focus(config: OpticalConfig, numerics: Numerics | None = None, *, a
         messages.append("相邻瞳面像素相位变化超过 π/2，请增加 --grid-size 检查收敛，防止混叠。")
 
     focal_coordinate, full_image, origin_field_x, origin_field_y = focus_fft(
-        pupil, spacing, config.wavelength, config.focal_length, numerics.padding_factor
+        pupil, spacing, config.wavelength, None if config.uses_na else config.focal_length,
+        numerics.padding_factor, numerical_aperture=config.numerical_aperture
     )
     focal_spacing = float(focal_coordinate[1]-focal_coordinate[0])
     full_power = float(full_image.sum()*focal_spacing**2)
     row, column = np.unravel_index(np.argmax(full_image), full_image.shape)
     peak_x, peak_y = float(focal_coordinate[column]), float(focal_coordinate[row])
-    natural_scale = config.wavelength*config.focal_length/(2*config.effective_radius)
+    natural_scale = config.wavelength/(2*config.effective_na)
     half_width = max(4*natural_scale, max(abs(peak_x), abs(peak_y))+3*natural_scale)
     if numerics.image_half_width_um is not None:
         half_width = numerics.image_half_width_um*1e-6
@@ -96,9 +103,9 @@ def simulate_focus(config: OpticalConfig, numerics: Numerics | None = None, *, a
     line_x, line_y = image[local_row, :].copy(), image[:, local_column].copy()
     widths = {"x": fwhm(points, line_x, local_column), "y": fwhm(points, line_y, local_row)}
     metrics = {
-        "effective_diameter_mm": config.effective_radius*2e3,
+        "effective_diameter_mm": None if config.uses_na else config.effective_radius*2e3,
         "effective_na": config.effective_na,
-        "observation_distance_mm": config.focal_length_mm,
+        "observation_distance_mm": None if config.uses_na else config.focal_length_mm,
         "peak_x_um": peak_x*1e6,
         "peak_y_um": peak_y*1e6,
         "peak_intensity_W_m2": float(full_image[row, column]),
@@ -138,18 +145,22 @@ def simulate_focus(config: OpticalConfig, numerics: Numerics | None = None, *, a
         messages.append("FFT 边界光强超过峰值的 1%，请增加 --grid-size 并检查相位采样。")
     transmitted_waves = phase[support]/(2*np.pi)
     metadata = {
-        "pupil_spacing_um": spacing*1e6,
-        "pupil_window_mm": window*1e3,
+        "pupil_spacing_um": None if config.uses_na else spacing*1e6,
+        "pupil_window_mm": None if config.uses_na else window*1e3,
+        "pupil_coordinate_units": "dimensionless" if config.uses_na else "m",
         "fft_size": numerics.grid_size*numerics.padding_factor,
         "focal_spacing_um": focal_spacing*1e6,
-        "zernike_normalization_radius_mm": config.beam_radius*1e3,
+        "zernike_normalization_radius_mm": None if config.uses_na else config.beam_radius*1e3,
         "full_beam_wavefront_rms_waves": float(np.sqrt(sum(
             t.coefficient_waves**2 for t in config.aberrations if t.n != 0
         ))),
         "sampled_transmitted_wavefront_rms_waves": float(np.std(transmitted_waves)),
         "maximum_neighbor_phase_step_rad": maximum_step,
-        "fwhm_definition": "connected half-maximum width through sampled global peak at fixed z=f; not Rayleigh",
+        "fwhm_definition": "connected half-maximum width through sampled global peak at fixed reference focal plane; not Rayleigh",
     }
+    if config.uses_na:
+        metadata.update({"pupil_spacing_normalized": spacing, "pupil_window_normalized": window,
+                         "zernike_normalization_radius_normalized": 1.0})
     if not aberrated:
         metadata["rayleigh_definition"] = (
             "numerical first dark ring: first sign changes on both sides of the FFT field peak; "
@@ -168,11 +179,12 @@ def simulate_focus(config: OpticalConfig, numerics: Numerics | None = None, *, a
         float(section_arrays["xz_intensity_W_m2"].max()),
         float(section_arrays["yz_intensity_W_m2"].max()),
     )
-    metadata["section_definition"] = "XZ at fixed y=peak_y(z=f); YZ at fixed x=peak_x(z=f); no peak tracking; one shared linear intensity normalization for both entire sections"
+    metadata["section_definition"] = "XZ at fixed y=reference-focus peak_y; YZ at fixed x=reference-focus peak_x; no peak tracking; one shared linear intensity normalization for both entire sections"
+    pupil_coordinate_key = "pupil_coordinate_normalized" if config.uses_na else "pupil_coordinate_m"
     return FocusResult(
         config, numerics, "zernike_focus" if aberrated else "fourier_focus",
         metrics, metadata, messages,
-        {"pupil_coordinate_m": coordinate, "pupil_support": support,
+        {pupil_coordinate_key: coordinate, "pupil_support": support,
          "pupil_phase_unwrapped_rad": np.where(support, phase, 0),
          "focal_coordinate_m": points, "focal_intensity_W_m2": image,
          "x_intensity_W_m2": line_x, "y_intensity_W_m2": line_y,

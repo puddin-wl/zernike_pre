@@ -23,6 +23,8 @@ def _parser(program):
               "fourier_focus": "均匀圆光束的后焦面 Fourier 聚焦",
               "zernike_focus": "瞳面共轭面加载 Zernike 相位后的 Fourier 聚焦"}
     parser = argparse.ArgumentParser(description=labels[program])
+    parser.add_argument("--na", "--numerical-aperture", dest="numerical_aperture", type=float,
+                        help="直接输入有效 NA，默认均匀光充分填充；忽略透镜直径、焦距和光束直径")
     if program == "resolution":
         medium = parser.add_mutually_exclusive_group()
         medium.add_argument("--immersion-medium", help="初始介质：air、water、oil 或数值折射率；默认 air")
@@ -41,7 +43,7 @@ def _parser(program):
         parser.add_argument("--padding-factor", type=int, help="FFT 零填充倍率，默认 8")
         parser.add_argument("--image-half-width-um", type=float, help="后焦面显示半宽，默认自动覆盖主峰")
         parser.add_argument("--axial-samples", type=int, help="轴向扫描点数，不小于 33 的奇数，默认 241")
-        parser.add_argument("--axial-half-range-um", type=float, help="相对 z=f 的轴向扫描半范围，默认自动设置")
+        parser.add_argument("--axial-half-range-um", type=float, help="相对参考焦面的轴向扫描半范围，默认自动设置")
         parser.add_argument("--section-samples", type=int, help="XZ/YZ 横向采样点数，默认 257，要求奇数")
         parser.add_argument("--section-half-width-um", type=float, help="XZ/YZ 相对固定纵线的横向半宽，默认自动设置")
         parser.add_argument("--no-show", action="store_true", help="仅保存结果，不弹出图窗")
@@ -55,7 +57,7 @@ def _arguments(default_config, program):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = _parser(program)
     args = parser.parse_args()
-    names = ("wavelength_nm", "lens_diameter_mm", "focal_length_mm", "beam_diameter_mm")
+    names = ("wavelength_nm", "lens_diameter_mm", "focal_length_mm", "beam_diameter_mm", "numerical_aperture")
     if program == "resolution":
         names += ("immersion_medium", "sample_refractive_index")
     updates = {name: getattr(args, name) for name in names if getattr(args, name) is not None}
@@ -84,13 +86,19 @@ def run_resolution(default_config):
         result = calculate_resolution(config, sample_refractive_index)
     except ValueError as error:
         parser.error(str(error))
-    lines = [
-        "均匀圆光束：理想近轴分辨率",
-        f"真空波长：{config.wavelength_nm:g} nm；初始介质中的工作焦距：{config.focal_length_mm:g} mm",
-        f"透镜直径：{config.lens_diameter_mm:g} mm；光束直径：{config.beam_radius*2e3:g} mm",
-        f"有效直径：{config.effective_radius*2e3:g} mm；有效 NA：{config.effective_na:.6g}",
-        "介质                 横向 Rayleigh (μm)    纵向估计 (μm，非 FWHM)",
-    ]
+    lines = ["均匀圆光束：理想近轴分辨率"]
+    if config.uses_na:
+        lines.extend([
+            f"真空波长：{config.wavelength_nm:g} nm；直接输入有效 NA：{config.effective_na:.6g}",
+            "NA 模式：均匀光充分填充；忽略透镜直径、焦距和光束直径。",
+        ])
+    else:
+        lines.extend([
+            f"真空波长：{config.wavelength_nm:g} nm；初始介质中的工作焦距：{config.focal_length_mm:g} mm",
+            f"透镜直径：{config.lens_diameter_mm:g} mm；光束直径：{config.beam_radius*2e3:g} mm",
+            f"有效直径：{config.effective_radius*2e3:g} mm；有效 NA：{config.effective_na:.6g}",
+        ])
+    lines.append("介质                 横向 Rayleigh (μm)    纵向估计 (μm，非 FWHM)")
     for key, label in (("initial_medium", f"{config.immersion_label} n={config.immersion_refractive_index:g}"),
                        ("sample_medium", f"样品 n={sample_refractive_index:g}")):
         values = result["results"][key]

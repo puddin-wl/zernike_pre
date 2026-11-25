@@ -45,20 +45,21 @@ def first_dark_ring(coordinate, field):
     return {"radius": (hi-lo)/2, "left": lo, "right": hi}
 
 
-def fwhm(coordinate, intensity, peak_index=None, *, evaluator=None):
-    """所选主峰的连通半高区；缺交点返回 None，不外推。"""
+def half_max_regions(coordinate, intensity, *, peak_height=None, evaluator=None):
+    """以绝对峰高的 50% 求全部连通区及最外侧交点跨度；不扣除局部谷底。
+
+    多个区间之间可能低于半高，因此 outer_span 不是某个单峰的 FWHM。
+    扫描边界截断的交点记为 None，整体跨度也返回 None，不外推。
+    """
+    coordinate = np.asarray(coordinate, dtype=float)
     values = np.asarray(intensity, dtype=float)
-    index = int(np.argmax(values)) if peak_index is None else peak_index
-    half = float(values[index]) / 2
+    half = float(np.max(values) if peak_height is None else peak_height)/2
+    missing = {"intervals": [], "outer_left": None, "outer_right": None, "outer_span": None}
+    if half <= 0:
+        return missing
     above = values >= half
-    regions = int(np.count_nonzero(above & ~np.r_[False, above[:-1]]))
-    left = right = index
-    while left > 0 and values[left] >= half:
-        left -= 1
-    while right < len(values)-1 and values[right] >= half:
-        right += 1
-    if half <= 0 or values[left] >= half or values[right] >= half:
-        return {"width": None, "left": None, "right": None, "half_height_regions": regions}
+    starts = np.flatnonzero(above & ~np.r_[False, above[:-1]])
+    ends = np.flatnonzero(above & ~np.r_[above[1:], False])
 
     def crossing(i, j):
         if evaluator is not None:
@@ -69,5 +70,32 @@ def fwhm(coordinate, intensity, peak_index=None, *, evaluator=None):
         return float(coordinate[i] + (half-values[i]) * (
             coordinate[j]-coordinate[i]) / (values[j]-values[i]))
 
-    lo, hi = crossing(left, left+1), crossing(right-1, right)
+    intervals = []
+    for start, end in zip(starts, ends):
+        lo = crossing(start-1, start) if start > 0 else (
+            float(coordinate[0]) if values[0] == half else None
+        )
+        hi = crossing(end, end+1) if end < len(values)-1 else (
+            float(coordinate[-1]) if values[-1] == half else None
+        )
+        intervals.append((lo, hi))
+    if not intervals:
+        return missing
+    outer_left, outer_right = intervals[0][0], intervals[-1][1]
+    span = None if outer_left is None or outer_right is None else outer_right-outer_left
+    return {"intervals": intervals, "outer_left": outer_left, "outer_right": outer_right, "outer_span": span}
+
+
+def fwhm(coordinate, intensity, peak_index=None, *, evaluator=None):
+    """所选主峰的连通半高区；缺交点返回 None，不跨越低于半高的间隙。"""
+    values = np.asarray(intensity, dtype=float)
+    index = int(np.argmax(values)) if peak_index is None else peak_index
+    profile = half_max_regions(coordinate, values, peak_height=values[index], evaluator=evaluator)
+    regions = len(profile["intervals"])
+    position = coordinate[index]
+    selected = next(((lo, hi) for lo, hi in profile["intervals"]
+                     if (lo is None or lo <= position) and (hi is None or position <= hi)), (None, None))
+    lo, hi = selected
+    if lo is None or hi is None:
+        return {"width": None, "left": None, "right": None, "half_height_regions": regions}
     return {"width": hi-lo, "left": lo, "right": hi, "half_height_regions": regions}

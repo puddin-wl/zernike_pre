@@ -5,7 +5,8 @@ from optics.cli import run_focus
 
 
 PARAMETERS = OpticalConfig(
-    wavelength_nm=550.0,
+    wavelength_nm=1064,
+    numerical_aperture=0.67,   # 如 0.67：均匀光充分填充；忽略孔径、焦距和光束直径
     lens_diameter_mm=4.0,
     focal_length_mm=50.0,
     beam_diameter_mm=None,     # None：等于透镜直径；所有尺寸均指瞳面等效尺寸

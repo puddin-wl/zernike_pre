@@ -14,7 +14,10 @@ def test_theory_entry_point_does_not_import_plotting_or_fft(tmp_path):
         "import runpy,sys; "
         f"sys.argv=['resolution.py','--lens-diameter-mm','6','--immersion-medium','oil',"
         f"'--sample-refractive-index','1.40','--output',{str(tmp_path)!r}]; "
-        "runpy.run_path('resolution.py',run_name='__main__'); "
+        # 入口参数供实验时编辑；显式切回几何模式，避免用户当前填写的 NA 干扰此测试。
+        "namespace=runpy.run_path('resolution.py'); "
+        "from dataclasses import replace; "
+        "namespace['run_resolution'](replace(namespace['PARAMETERS'],numerical_aperture=None)); "
         "assert not any(n in sys.modules for n in ('matplotlib','numpy','scipy'))"
     )
     result = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[1],

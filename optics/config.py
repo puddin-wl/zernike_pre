@@ -44,23 +44,36 @@ class ZernikeTerm:
 @dataclass(frozen=True)
 class OpticalConfig:
     wavelength_nm: float = 550.0
-    lens_diameter_mm: float = 4.0
-    focal_length_mm: float = 50.0
+    lens_diameter_mm: float | None = 4.0
+    focal_length_mm: float | None = 50.0
     beam_diameter_mm: float | None = None  # None：自动等于透镜直径
     aberrations: tuple[ZernikeTerm, ...] = field(default_factory=tuple)
+    numerical_aperture: float | None = None  # 直接指定有效 NA；忽略全部几何尺寸，默认充分填充
 
     def __post_init__(self):
-        for name in ("wavelength_nm", "lens_diameter_mm", "focal_length_mm", "beam_diameter_mm"):
+        names = ("wavelength_nm",) if self.uses_na else (
+            "wavelength_nm", "lens_diameter_mm", "focal_length_mm", "beam_diameter_mm"
+        )
+        for name in names:
             value = getattr(self, name)
             if name == "beam_diameter_mm" and value is None:
                 continue
-            if not math.isfinite(value) or value <= 0:
+            if value is None or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} 必须是正的有限数。")
+        if self.uses_na:
+            na = self.numerical_aperture
+            index = getattr(self, "immersion_refractive_index", 1.0)
+            if not math.isfinite(na) or not 0 < na < index:
+                raise ValueError("numerical_aperture（NA）必须是正的有限数，且小于初始介质折射率（程序二、三为空气 n=1）。")
         if not all(isinstance(term, ZernikeTerm) for term in self.aberrations):
             raise ValueError("aberrations 必须由 ZernikeTerm 组成。")
         modes = [(term.n, term.m) for term in self.aberrations]
         if len(modes) != len(set(modes)):
             raise ValueError("同一个 (n,m) 只能出现一次，请先合并系数。")
+
+    @property
+    def uses_na(self):
+        return self.numerical_aperture is not None
 
     @property
     def wavelength(self):
@@ -85,6 +98,8 @@ class OpticalConfig:
 
     @property
     def effective_na(self):
+        if self.uses_na:
+            return self.numerical_aperture
         return self.effective_radius / self.focal_length
 
     def diagnostics(self):
@@ -119,15 +134,19 @@ class ResolutionConfig(OpticalConfig):
 
     @property
     def angular_aperture(self):
+        if self.uses_na:
+            return self.numerical_aperture / self.immersion_refractive_index
         return self.effective_radius / self.focal_length
 
     @property
     def effective_na(self):
+        if self.uses_na:
+            return self.numerical_aperture
         return self.immersion_refractive_index * self.angular_aperture
 
     def diagnostics(self):
         if self.angular_aperture > 0.2:
-            return ["NA/n_i = 有效半径/工作焦距 > 0.2：近轴模型误差可能显著，本结果不是高 NA 精确解。"]
+            return ["NA/n_i > 0.2：近轴模型误差可能显著，本结果不是高 NA 精确解。"]
         return []
 
 

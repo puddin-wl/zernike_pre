@@ -1,6 +1,6 @@
 # 均匀光聚焦、分辨率与泽尼克像差
 
-输入波长、透镜直径、焦距和均匀圆光束直径，计算理想分辨尺度，模拟后焦面光斑及其轴向变化。
+输入波长和有效 NA，或输入波长、透镜直径、焦距和均匀圆光束直径，计算理想分辨尺度，模拟焦面光斑及其轴向变化。
 
 | 程序 | 作用 | 主要输出 |
 | --- | --- | --- |
@@ -27,6 +27,8 @@ python fourier_focus.py
 python zernike_focus.py
 ```
 
+图窗会根据窗口大小自动调整标题、坐标标签和指标标注的间距。轴向 FWHM、瑞利距离与峰值位置分行显示，横向 FWHM 和底部说明各占独立区域。
+
 程序二、三默认显示图窗并保存结果。依次运行时，关闭当前图窗后再运行下一个；只保存文件时使用：
 
 ```bash
@@ -45,9 +47,10 @@ python zernike_focus.py --no-show
 | 参数 | 默认值 | 含义 |
 | --- | --- | --- |
 | `wavelength_nm` | 550 | 真空波长 λ0，单位 nm；通常标注的空气波长可近似使用 |
-| `lens_diameter_mm` | 4 | 透镜有效圆孔径直径，单位 mm |
-| `focal_length_mm` | 50 | 工作焦距，单位 mm；程序一指所选初始介质中的焦距，程序二、三仍指空气中焦距 |
-| `beam_diameter_mm` | `None` | 瞳面上的均匀圆光束直径，单位 mm；`None` 表示自动等于透镜直径 |
+| `numerical_aperture` | `None` | 直接指定实际参与聚焦的有效 NA，如 `0.67`；填写后优先使用该值，默认均匀光充分填充，忽略下面三个几何尺寸 |
+| `lens_diameter_mm` | 4 | 几何模式：透镜有效圆孔径直径，单位 mm |
+| `focal_length_mm` | 50 | 几何模式：工作焦距，单位 mm；程序一指所选初始介质中的焦距，程序二、三仍指空气中焦距 |
+| `beam_diameter_mm` | `None` | 几何模式：瞳面上的均匀圆光束直径，单位 mm；`None` 表示自动等于透镜直径 |
 | `aberrations` | 见程序三入口 | `ZernikeTerm(n, m, coefficient_waves)` 列表，仅程序三加载 |
 
 程序一使用 `ResolutionConfig`，另外提供两个彼此独立的介质参数；程序二、三仍使用原来的 `OpticalConfig`，只模拟空气，不提供这些介质选项：
@@ -59,7 +62,7 @@ python zernike_focus.py --no-show
 
 预设折射率用于演示；准确计算时，应填写实验波长下实际测得或材料给定的折射率。两个折射率均要求为正的有限实数。当前平面界面模型还要求 `n_s > NA_initial`，否则会发生传播角谱丢失，程序明确报错，不继续套用“NA 不变”的公式。
 
-例如，只修改透镜直径且保留 `beam_diameter_mm=None` 时，光束直径会跟着变化。需要独立控制欠填充或过填充时，给光束直径填写具体数值。
+未填写 `numerical_aperture` 时沿用几何模式。例如，只修改透镜直径且保留 `beam_diameter_mm=None` 时，光束直径会跟着变化。需要独立控制欠填充或过填充时，给光束直径填写具体数值。
 
 相位加载面是透镜瞳面的理想共轭面。输入光束直径、相位图案尺寸均指**已经换算到瞳面的等效尺寸**，不再模拟共轭光路。光束与透镜孔径同轴、居中，圆内振幅均匀，加载前波前平坦。
 
@@ -73,6 +76,29 @@ D_eff = min(D_beam, D_lens)
 
 光束较小时，未填满透镜，有效 NA 由光束决定；光束较大时，透镜挡住外围，有效 NA 由孔径决定。在折射率和工作焦距不变时，有效直径减半，理想横向尺度约增大 2 倍、轴向尺度约增大 4 倍。这个 NA 是近轴近似；大角度情况需要更完整的光学模型。
 
+### 直接输入 NA：只有物镜标称 NA 时
+
+三个入口顶部均提供 `numerical_aperture=None`。改成 `0.67` 即启用 NA 模式；也可在命令行使用 `--na 0.67`（别名 `--numerical-aperture`）。命令行 NA 覆盖入口中的值。默认值仍为 `None`，原有运行方式保持可用。
+
+NA 模式默认**均匀光充分填充物镜，输入值就是有效 NA**。透镜直径、焦距和光束直径全部忽略；不再根据它们计算欠填充、截光或重新缩放 NA。程序一中也不会再把输入 NA 乘以初始介质折射率。要求 NA 是正的有限数且 `NA < n_i`；程序二、三在空气中，要求 `0 < NA < 1`。程序一仍要求样品 `n_s > NA`。
+
+例如程序一可以只填写波长、NA 和介质参数，几何尺寸无需提供：
+
+```python
+PARAMETERS = ResolutionConfig(
+    wavelength_nm=1064.0,
+    numerical_aperture=0.67,
+    immersion_medium="air",
+    sample_refractive_index=2.39,
+)
+```
+
+程序二、三在 `OpticalConfig` 中同样设置 `wavelength_nm=1064.0, numerical_aperture=0.67`；泽尼克列表和采样参数仍分别由原来的配置控制。
+
+这里把整个入射圆光束表示为半径为 1 的无量纲圆，再用波长和 NA 换算焦区的 μm 尺寸。泽尼克单位圆覆盖完整光束，面积 RMS 归一化保持不变。焦面定义为 `Δz=0`，轴向只报告相对此面的距离与主峰偏移，不虚构透镜焦距、实际孔径或距透镜的绝对 z。
+
+**NA 模式仍是标量、近轴模型，没有增加高 NA 精度。** 它采用焦区近轴离焦相位，省去只有已知焦距时才能计算的有限距离尺度变化和 `1/z` 幅度变化（见第 6.5 节）。相同波长、NA、充分填充条件下，两种模式的参考焦面光斑一致；轴向在几何模式下还可能有有限焦距造成的轻微不对称与焦移。输入 NA=0.67 时仍会给出近轴适用范围提示。
+
 ### 数值参数 `NUMERICS`
 
 | 参数 | 默认值 | 作用与限制 |
@@ -80,14 +106,14 @@ D_eff = min(D_beam, D_lens)
 | `grid_size` | 512 | 瞳面网格边长，偶数且不小于 128；改善孔径、相位和传播积分采样 |
 | `padding_factor` | 8 | FFT 零填充倍率，整数且不小于 2；细化焦面采样，不提高真实分辨能力 |
 | `image_half_width_um` | `None` | 后焦面图像的横向半宽，单位 μm；默认自动覆盖主峰 |
-| `axial_samples` | 241 | 轴向基础采样点数，奇数且不小于 33；会额外插入细化后的主峰点 |
-| `axial_half_range_um` | `None` | 相对 z=f 的轴向扫描半范围，单位 μm；手动值必须为正且小于焦距 |
+| `axial_samples` | 241 | 轴向基础采样点数，奇数且不小于 33；会额外插入细化后的各局部峰点，再比较峰高 |
+| `axial_half_range_um` | `None` | 相对参考焦面的轴向扫描半范围，单位 μm；必须为正；几何模式下还必须小于焦距 |
 | `section_samples` | 257 | XZ/YZ 的横向采样点数，奇数且不小于 33 |
 | `section_half_width_um` | `None` | XZ/YZ 相对固定纵线的横向半宽，单位 μm；默认覆盖离焦光束 |
 
-所有长度在计算内部转换为 m。瞳面窗口宽度取有效直径的 1.25 倍，零填充后的边长为 `grid_size * padding_factor`。过填充时只需采样透射区域，但泽尼克仍按完整光束半径定义。
+所有物理长度在计算内部转换为 m；NA 模式的瞳面坐标为无量纲。几何模式瞳面窗口宽度取有效直径的 1.25 倍，NA 模式单位圆半径为 1、窗口宽度为 2.5；零填充后的边长均为 `grid_size * padding_factor`。几何模式过填充时只需采样透射区域，但泽尼克仍按完整光束半径定义。
 
-`grid_size` 控制原始光场的采样，`padding_factor` 控制已有光场在焦面上的采样密度。加大零填充不能补救瞳面相位欠采样，FFT 内存开销随边长平方增长。轴向自动半范围根据 NA 和加载相位幅度选择，最大限制为 0.8f；计算结果会记录实际范围与步长。
+`grid_size` 控制原始光场的采样，`padding_factor` 控制已有光场在焦面上的采样密度。加大零填充不能补救瞳面相位欠采样，FFT 内存开销随边长平方增长。轴向自动半范围根据 NA 和加载相位幅度选择；几何模式最大限制为 0.8f，NA 模式没有焦距限制。计算结果会记录实际范围与步长。
 
 ## 3. 瑞利距离、FWHM 和轴向主峰偏移
 
@@ -104,7 +130,7 @@ D_eff = min(D_beam, D_lens)
 
 ### 半高全宽（FWHM，Houston 判据）
 
-FWHM 是主峰左右两侧光强降到峰值 50% 时，两个位置之间的**全宽**。横向沿 x/y 光强截面测量，轴向沿固定纵线的 I(z) 曲线测量。
+FWHM 是光强在峰值 50% 高度处的**全宽**。横向沿 x/y 光强截面测量所选主峰所在连通区；轴向沿固定纵线的整条 I(z) 曲线，统一取全局最大值 50% 的**最左、最右两个交点**，不因中间凹槽或最高峰位置切换而截断测量区间。多峰时采用的是本项目明确约定的外侧半高宽，包含内部低于半高的间隙，不能据此认定整个区间都有至少 50% 的光强。
 
 以 PSF 的半高全宽表征分辨率，也称 **Houston 判据（Houston criterion）**。轴向对应的指标名称是**轴向光强半高全宽（axial intensity FWHM）**。[ZEISS 对 Houston 判据及横向、轴向 FWHM 的说明，第 12 页](https://pages.zeiss.com/rs/896-XMS-794/images/ZEISS-Microscopy_The-Basic-Principle-of-Airyscanning.pdf)
 
@@ -141,10 +167,42 @@ $$
 
 - 程序二的横向瑞利距离从同一次 FFT 的复振幅截面提取：去掉整体相位，寻找主峰两侧第一次变号，三次样条插值求零点，取左右半径及 x/y 方向的平均。不以 `0.61 λ0/NA` 补值。
 - 程序二的轴向瑞利距离从 I(z) 的主峰两侧第一极小值提取。离散孔径未必产生严格零点，只接受极小值强度不超过主峰 `1e-4` 的情况；两侧位置间距的一半作为数值瑞利距离。
-- FWHM 只描述所选最强主峰的连通半高区。多峰时给出提示；缺少完整半高交点或第一暗环/轴向极小值时返回 `null`，不外推或套用理论公式。
-- `axial_peak_offset_um` 是轴向曲线最强主峰相对几何后焦面 z=f 的位置，正值表示离透镜更远，负值表示更近。它是焦移，不能代替轴向 FWHM。最大值落在扫描边界时不认为已找到主峰，偏移和 FWHM 返回 `null`。
+- 横向 FWHM 描述所选最强主峰所在的连通半高区；轴向 FWHM 统一测量整条曲线最外侧半高交点间距。缺少完整半高交点或第一暗环/轴向极小值时返回 `null`，不外推或套用理论公式。
+- `axial_peak_offset_um` 是所选最高峰相对参考焦面的位置，正值表示离透镜更远，负值表示更近。单主峰时可作为轴向焦移参考；多峰时最高峰身份可能切换，这个坐标不能解释为连续焦移。最大值落在扫描边界时不认为已找到主峰，偏移、FWHM 和整体半高跨度返回 `null`。
 
 加载一般波前像差后，光斑依然能够计算，但可能失去标准艾里形状或完整暗环，因此程序三不强行报告瑞利暗环距离。活塞只改变整体相位；纯倾斜只平移理想焦斑；其他像差可能导致展宽、偏斜或分裂。所有数值都是模型下的仿真结果，不是实验实测值。
+
+### 球差导致多峰时：轴向统一采用最外侧半高宽
+
+程序先细化扫描中发现的各个局部峰，确定全局最大值，再以 `I_half=0.5 I_max` 为统一阈值。从扫描左右两端向内找第一次与半高线相交的位置，两个交点之间的距离就是图中和终端报告的**轴向 FWHM（最外侧半高交点约定）**。最大值只负责确定半高线，不负责选择宽度属于哪一个峰；内部凹槽不截断这项宽度测量。
+
+这里保留零光强基线，不按局部谷底重新计算“50%”。常见峰宽算法明确区分 half-height 与 half-prominence，后者相对峰的突出度计算，不能直接替代这里的光强半高宽。[MathWorks：峰宽参考高度](https://www.mathworks.com/help/signal/ref/findpeaks.html)、[SciPy：peak_widths 的突出度定义](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.peak_widths.html)
+
+程序分别报告：
+
+| 输出 | 定义与限制 |
+| --- | --- |
+| `axial_fwhm_um` | 主要轴向宽度输出：全局半高线与曲线最左、最右交点之间的距离；跨过内部凹槽，不随所选最高峰身份切换测量区间 |
+| `axial_half_max_left_um`、`axial_half_max_right_um` | 主要 FWHM 对应的最外侧两个交点 |
+| `axial_half_max_intervals_um` | 所有 `I≥0.5 I_max` 区间的左右交点，单位 μm；边界截断处记录为 `null` |
+| `axial_half_max_span_um` | 与 `axial_fwhm_um` 相同，保留为整体半高跨度字段；包含内部低于半高的间隙，不代表连续可用的焦深 |
+| `axial_local_fwhm_um` | 仅作辅助数据保留：所选最高峰所在连通半高区的局部宽度；不作为图中和终端的主要轴向 FWHM |
+| `axial_half_height_regions` | 半高区间的段数；它不是局部峰的个数 |
+
+若最外侧半高区被扫描边界截断，轴向 FWHM 返回 `null`，需扩大扫描范围；不把扫描边界冒充半高交点。该规则也适用于更大的球差系数。
+
+在 λ0=1064 nm、有效 NA=0.67、仅加载 RMS 归一化初级球差 `Z(4,0)`、瞳面网格 512 的复现中：
+
+| 球差系数 / waves RMS | 原局部宽度 / μm（仅辅助） | 当前轴向 FWHM / μm | 半高区间段数 |
+| --- | --- | --- | --- |
+| 0.20 | 15.2405 | 15.2405 | 1 |
+| 0.40 | 7.55367 | 40.5854 | 3 |
+| 0.41 | 14.8289 | 41.2224 | 3 |
+| 0.60 | 61.6239 | 61.6239 | 1 |
+
+0.20 和 0.60 时内部谷底仍高于半高线，因此旧的局部算法也能测得整段宽度；0.40 的中间谷底略低于 50%，旧算法错误地把主要输出缩成中央小段；0.41 又切换为侧峰所在区间。当前统一使用最外侧交点，避免这些测量区间的跳变。独立的一维径向 Gauss–Legendre 求积（入射光仍是均匀光）得到 0.40、0.41 的外侧宽度约 40.5895、41.2224 μm，与二维瞳面结果吻合。图中绿色覆盖整个轴向 FWHM 测量范围，包括内部凹槽；不再并排显示两个竞争的轴向宽度。
+
+球差还可能把能量从很窄的中心峰转移到外围，因此横向 FWHM 变小也不能单独说明分辨能力提高。若进一步评价能量集中程度，可使用包围能量等补充指标；这次未加入该计算。[STScI：球差光斑的核心、宽翼与包围能量](https://www.stsci.edu/instruments/wfpc2/Wfpc2_hand2/ch5_psf2.html)
 
 ## 4. 浸没介质、组织折射率与分辨率：文献依据
 
@@ -155,6 +213,8 @@ $$
 对已经确定 NA 的物镜，在后续平面界面没有额外截光或丢失角谱的理想条件下，斯涅尔定律保持 `n_i sinθ_i=n_s sinθ_s`，不能仅因进入组织、波长变短，就在原有 NA 上再乘一次组织折射率。因此“换成油浸物镜提高 NA”和“同一初始聚焦系统随后进入样品”是不同的比较。
 
 程序一将 f 定义为**当前初始介质中的工作焦距**。只改变 n_i、保持输入 D 和 f 不变，是在比较相同会聚几何的理想系统；真实透镜更换外部介质后工作焦距可能变化，需输入相应的实际工作焦距。当前模型没有镜片曲率、玻璃折射率等信息，不会自动预测同一块玻璃透镜浸油后的新焦距。
+
+以上关于 D、f 与油浸改变 NA 的比较适用于几何模式。直接输入 NA 时，程序固定使用该有效值；改变 `immersion_medium` 不会自动改变输入 NA。比较不同空气/油浸物镜时，应分别填写对应物镜在其使用介质中的有效 NA。
 
 ### 折射率失配对横向和轴向分辨率的已发表结果
 
@@ -304,7 +364,7 @@ return np.sqrt(2*(n + 1)) * radial * angular
 
 ### 6.1 构造瞳面复振幅并截光
 
-程序三将泽尼克相位从理想共轭面映射到瞳面；程序二使用零相位。孔径外复振幅直接置零，随后传播自然包含孔径边缘衍射。
+程序三将泽尼克相位从理想共轭面映射到瞳面；程序二使用零相位。孔径外复振幅直接置零，随后传播自然包含孔径边缘衍射。NA 模式设 `effective_radius=beam_radius=1`；几何模式使用配置中的实际有效半径和完整光束半径。
 
 ```text
 U_pupil = A_beam · P_lens · exp(iφZ)
@@ -314,9 +374,9 @@ U_pupil = A_beam · P_lens · exp(iφZ)
 
 ```python
 radius = np.hypot(x, y)
-support = radius <= config.effective_radius
-phase = phase_on_beam(x, y, config.beam_radius, config.aberrations)
-amplitude = 1 / np.sqrt(np.pi*config.beam_radius**2)
+support = radius <= effective_radius
+phase = phase_on_beam(x, y, beam_radius, config.aberrations)
+amplitude = 1 / np.sqrt(np.pi*beam_radius**2)
 pupil = amplitude * support * np.exp(1j*phase)
 ```
 
@@ -324,7 +384,7 @@ pupil = amplitude * support * np.exp(1j*phase)
 
 ### 6.2 后焦面：一次带尺度的二维 FFT
 
-瞳面到后焦面的 Fourier 关系为：
+几何模式中，瞳面到后焦面的 Fourier 关系为：
 
 $$
 U_f(X,Y)\propto\frac{1}{\lambda_0 f}
@@ -343,16 +403,18 @@ padded_size = size * padding_factor
 pad = (padded_size-size)//2
 padded = np.pad(pupil, ((pad, pad), (pad, pad)))
 transformed = fftshift(fft2(ifftshift(padded), overwrite_x=True))
-transformed *= spacing**2 / (wavelength*focal_length)
+frequency_scale = (numerical_aperture/wavelength if numerical_aperture is not None else
+                   1/(wavelength*focal_length))
+transformed *= spacing**2 * frequency_scale
 intensity = np.abs(transformed)**2
-coordinate = fftshift(fftfreq(padded_size, d=spacing)) * wavelength*focal_length
+coordinate = fftshift(fftfreq(padded_size, d=spacing)) / frequency_scale
 ```
 
 这里只省略不影响光强和零点位置的单位模传播相位。程序保留穿过原点的复振幅截面，用于数值第一暗环定位。
 
 ### 6.3 轴向：物理离焦相位与固定点积分
 
-取透镜后的实际位置 `z=f+Δz>0`。薄透镜相位与 Fresnel 传播中的二次相位合并后：
+几何模式取透镜后的实际位置 `z=f+Δz>0`。薄透镜相位与 Fresnel 传播中的二次相位合并后：
 
 $$
 Q_z(x,y)=\exp\!\left[\frac{i\pi}{\lambda_0}
@@ -385,7 +447,7 @@ def fixed_point_field(pupil, coordinate, wavelength, focal_length, x_fixed, y_fi
     return evaluate
 ```
 
-对每个 z 取 `abs(evaluate(z))**2` 得到 I(z)，局部优化细化轴向峰值，再通过同一积分求解两侧半高交点。无需每个 z 都做完整二维 FFT。
+对每个 z 取 `abs(evaluate(z))**2` 得到 I(z)，逐一细化采样中发现的局部峰后选择最高峰，再通过同一积分求解全部半高交点。无需每个 z 都做完整二维 FFT。
 
 程序二沿光轴扫描；程序三固定在 **z=f 主峰的横向坐标**扫描，不逐层追踪横向最大值。加载的泽尼克系数始终保持不变，扫描相位由实际 Δz 决定，不是任意改变原始泽尼克离焦系数。横向图仍固定在 z=f，不因找到轴向主峰而重新调焦。
 
@@ -393,19 +455,54 @@ def fixed_point_field(pupil, coordinate, wavelength, focal_length, x_fixed, y_fi
 
 XZ 固定 y 为 z=f 主峰的 y 坐标，YZ 固定 x 为该主峰的 x 坐标。在每个 z 上，只求对应的横向直线，无需构造整张离焦 XY 图或三维体数据。
 
-来自 [optics/sections.py](optics/sections.py) 的循环核心如下。`projection=x*x_fixed+y*y_fixed`，`transform_argument` 是切面横向偏移与瞳面坐标的外积：
+来自 [optics/sections.py](optics/sections.py) 的几何模式循环核心如下。`projection=x*x_fixed+y*y_fixed`，`transform_argument` 是切面横向偏移与瞳面坐标的外积：
 
 ```python
 z = config.focal_length+offset
 phase = np.pi/config.wavelength*((1/z-1/config.focal_length)*radius_squared-2*projection/z)
 plane = pupil*np.exp(1j*phase)
-kernel = np.exp(-2j*np.pi*transform_argument/(config.wavelength*z))
-factor = spacing**2/(config.wavelength*z)
+frequency_scale = 1/(config.wavelength*z)
+kernel = np.exp(-2j*np.pi*transform_argument*frequency_scale)
+factor = spacing**2*frequency_scale
 xz[index] = np.abs(np.einsum("ij,j->i", kernel, plane.sum(axis=0))*factor)**2
 yz[index] = np.abs(np.einsum("ij,j->i", kernel, plane.sum(axis=1))*factor)**2
 ```
 
 两张切面的中心列与固定纵线的轴向曲线一致。XZ/YZ 共用两张完整切面的一个最大值及同一线性色标，不逐层归一化。轴向曲线则用整条曲线的峰值归一化，保留随 z 的真实相对变化。
+
+### 6.5 NA 模式：单位瞳面的焦区近轴计算
+
+以无量纲瞳面坐标 `(u,v)` 表示圆 `u²+v²≤1`，令 `ρ²=u²+v²`。将原几何模式中的 `r=Rρ`、`R/f=NA` 代入，并在焦点附近取 `1/z≈1/f`、`1/z−1/f≈−Δz/f²`，得到焦区近轴模型：
+
+$$
+U(X,Y,\Delta z)=\frac{\mathrm{NA}}{\lambda_0}
+\iint_{u^2+v^2\leq1}p(u,v)
+\exp\!\left[-\frac{i\pi\mathrm{NA}^2\Delta z}{\lambda_0}(u^2+v^2)\right]
+\exp\!\left[-\frac{i2\pi\mathrm{NA}}{\lambda_0}(uX+vY)\right]du\,dv.
+$$
+
+`p=exp(iφZ)/sqrt(π)`，其解析入射功率为 1 W。整体单位模传播相位已省略；该式仍使用近轴二次离焦相位。对参考焦面 `Δz=0` 做一次 FFT，焦面坐标为 `X=(λ0/NA)νu`，幅度乘 `du² NA/λ0`，因此焦区仍保留 m 坐标和 W/m² 光强，积分功率满足 Parseval 关系。
+
+轴向扫描只对上式求固定点积分。代码来自 [optics/axial.py](optics/axial.py) 的 `normalized_point_field`：
+
+```python
+def normalized_point_field(pupil, coordinate, wavelength, numerical_aperture, x_fixed, y_fixed):
+    x, y = np.meshgrid(coordinate, coordinate)
+    support = np.abs(pupil) > 0
+    radius_squared = (x*x+y*y)[support]
+    projection = (x*x_fixed+y*y_fixed)[support]
+    weights = pupil[support]
+    factor = (coordinate[1]-coordinate[0])**2*numerical_aperture/wavelength
+
+    def evaluate(offset):
+        phase = -np.pi/wavelength*(numerical_aperture**2*offset*radius_squared
+                                  + 2*numerical_aperture*projection)
+        return complex(np.sum(weights*np.exp(1j*phase))*factor)
+
+    return evaluate
+```
+
+XZ/YZ 使用同样的离焦相位及横向尺度，只计算固定平面上的一维 Fourier 积分。每次模拟仍仅调用一次二维 FFT。无像差时轴向解析强度为 `sinc²(NA² Δz/(2λ0))`，其中 `sinc(t)=sin(πt)/(πt)`；主峰在参考焦面，不包含几何模式 `1/z²` 项引起的有限焦距焦移。
 
 ## 7. 本次结果：2026-11-24
 
@@ -480,13 +577,18 @@ aberrations = (
 总览为居中双列三行：A 后焦面光斑、B 轴向曲线、C XZ、D YZ、E 横向 x 截面、F 横向 y 截面。
 
 - 橙色虚线：程序二数值横向第一暗环及轴向近零第一极小值。
-- 绿色区域：轴向半高全宽区间；橙色圆点：轴向曲线主峰。
+- 绿色区域：最外侧两个半高交点之间的轴向 FWHM 测量范围，包含内部凹槽；橙色圆点：最大光强位置，其位置不决定 FWHM 的测量区间。
 - XZ/YZ 的白色横向虚线：z=f；白色纵向点线：轴向曲线所在的固定纵线。
 - 横向图、轴向曲线各自按整幅/整条峰值显示；XZ/YZ 共同使用同一色标。原始绝对光强保存在数据文件中。
 
 ## 8. 常用操作与输出文件
 
 ```bash
+# 只有有效 NA 时，三个程序均忽略全部几何尺寸，默认均匀光充分填充。
+python resolution.py --wavelength-nm 1064 --na 0.67 --sample-refractive-index 2.39
+python fourier_focus.py --wavelength-nm 1064 --na 0.67 --no-show
+python zernike_focus.py --wavelength-nm 1064 --na 0.67 --no-show
+
 # 光学参数可覆盖各入口顶部的默认值。
 python resolution.py --wavelength-nm 532 --lens-diameter-mm 4 --focal-length-mm 50 --beam-diameter-mm 2
 
@@ -527,7 +629,8 @@ JSON 记录参数、单位明确的指标、功率、采样设置与诊断。NPZ
 
 | 数组 | 含义 |
 | --- | --- |
-| `axial_offset_m`、`axial_z_m` | 相对后焦面的偏移、距透镜的实际 z |
+| `axial_offset_m` | 相对参考焦面的轴向偏移，两种输入模式均保存 |
+| `axial_z_m` | 距透镜的实际 z，仅几何模式保存 |
 | `axial_intensity_W_m2` | 固定纵线的轴向光强 |
 | `section_z_offset_m` | XZ/YZ 的相对后焦面 z 坐标 |
 | `xz_x_coordinate_m`、`yz_y_coordinate_m` | 两切面的实际横向坐标 |
@@ -535,13 +638,15 @@ JSON 记录参数、单位明确的指标、功率、采样设置与诊断。NPZ
 
 程序二另保存用于暗环定位的 x/y 复振幅截面。程序一的 JSON 中，`initial_medium`、`sample_medium` 分别对应两组介质结果，参数中记录实际使用的两个折射率。`results/` 不纳入版本管理；本 README 使用的两张 PNG 和四份 JSON 快照位于 `docs/`，随文档保留。
 
+JSON 的 `parameters.input_mode` 区分 `geometry` 与 `numerical_aperture`。NA 模式中，三个被忽略的尺寸、有效直径、绝对观察距离及物理瞳面尺寸记录为 `null`，不将入口保留的默认值当成实际参数。NPZ 此时保存 `pupil_coordinate_normalized`，不用 `pupil_coordinate_m`；JSON 记录 `pupil_coordinate_units="dimensionless"`、无量纲采样间距和泽尼克归一化半径 1。焦区横向、轴向坐标始终为 m。
+
 ## 9. 验证与模型范围
 
 ```bash
 python -m pytest -q
 ```
 
-验证覆盖初始介质和样品折射率的独立配置、空气/油浸理论尺度、无角谱损失的适用条件、Airy 解析截面、数值暗环位置、FWHM、功率守恒、RMS 正交归一、截光后的相位尺度、倾斜与离焦的位移、零像差一致性、轴向解析场与收敛、XZ/YZ 与独立单点积分一致性，以及每次模拟仍只调用一次二维 FFT。理论入口另验证不加载 NumPy、SciPy 或 Matplotlib；程序二、三不接受介质选项，保持原有空气模型。
+验证覆盖初始介质和样品折射率的独立配置、空气/油浸理论尺度、无角谱损失的适用条件、Airy 解析截面、数值暗环位置、FWHM、功率守恒、RMS 正交归一、截光后的相位尺度、倾斜与离焦的位移、零像差一致性、轴向解析场与收敛、XZ/YZ 与独立单点积分一致性，以及每次模拟仍只调用一次二维 FFT。新增 NA 模式验证尺寸完全忽略、NA 不重复乘初始折射率、单位瞳面 Airy/sinc² 解析解、坐标和功率尺度、泽尼克离焦与切面独立积分。理论入口另验证不加载 NumPy、SciPy 或 Matplotlib；程序二、三不接受介质选项，保持原有空气模型。
 
 程序一分别检查初始介质的 `NA/n_i` 和样品的 `NA/n_s`，大于 0.2 时给出近轴误差提示；程序二、三仍按空气中的有效 NA>0.2 提示。相邻瞳面像素相位变化过快、轴向主瓣采样过少、视场或扫描范围不足时，先加密采样或扩大范围检查收敛。指定后焦面显示范围未包含全局主峰时会报错，避免将旁瓣当作主峰。
 
