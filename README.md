@@ -40,6 +40,8 @@ python zernike_focus.py --no-show
 
 在 VS Code 中选择 `lpr` 解释器，修改入口顶部的 `PARAMETERS`、`NUMERICS` 后直接运行；F5 提供三个对应配置。图窗缺少桌面显示条件时，使用 `--no-show`。`python 程序名.py --help` 可查看全部命令行参数。
 
+程序二、三使用 Qt 图窗时，窗口大小按屏幕可用区域设置，完整画布保留足够的高度。屏幕放不下时可用滚轮或滚动条查看下方的 XZ/YZ 切面和横向截面，避免将所有子图压扁。保存的 `overview.png`、`overview.svg` 仍使用完整排版，不受图窗尺寸或屏幕缩放倍率影响。
+
 ## 2. 参数、单位与光路位置
 
 ### 光学参数 `PARAMETERS`

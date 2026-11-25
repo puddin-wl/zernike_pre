@@ -125,7 +125,7 @@ def run_focus(default_config, *, aberrated=False, default_numerics=None):
         })
     except ValueError as error:
         parser.error(str(error))
-    from .display import configure_display
+    from .display import configure_display, prepare_interactive_figure
     configure_display(no_show=args.no_show)
     from .simulation import simulate_focus
     from .report import print_summary, save_result
@@ -140,4 +140,5 @@ def run_focus(default_config, *, aberrated=False, default_numerics=None):
     if args.no_show:
         plt.close(figure)
     else:
+        prepare_interactive_figure(figure)
         plt.show(block=True)

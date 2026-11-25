@@ -79,3 +79,53 @@ def configure_display(no_show=False):
     # 真正导入后端以检查可用性，而不是等计算结束才在创建窗口时发现缺依赖。
     import matplotlib.pyplot as plt
     return _select_interactive_backend(plt.switch_backend, sys.platform)
+
+
+def prepare_interactive_figure(figure):
+    """导出之后设置 Qt 图窗：缩小外框，画布保留高度，通过滚动查看。
+
+    Qt 的屏幕和控件尺寸均使用逻辑像素；不额外乘 Retina 缩放倍率。
+    这里只调整交互窗口，不改变此前保存的 overview 文件。
+    """
+    import matplotlib
+
+    if matplotlib.get_backend().lower() != "qtagg":
+        return False
+    from matplotlib.backends.qt_compat import QtCore, QtWidgets
+
+    canvas = figure.canvas
+    window = canvas.manager.window
+    if isinstance(window.centralWidget(), QtWidgets.QScrollArea):
+        return True
+    screen = window.screen() or QtWidgets.QApplication.primaryScreen()
+    available = screen.availableGeometry()
+    window_width = int(available.width()*0.92)
+    window_height = int(available.height()*0.90)
+
+    # 仅让画布宽度适应屏幕。高度至少保留导出图所需的空间，避免三行
+    # 子图被窗口管理器压扁；极窄的屏幕同时允许横向滚动。
+    original_dpi = figure._original_dpi
+    width = max(1000, min(round(figure.get_figwidth()*original_dpi), window_width-32))
+    height = max(1500, round(figure.get_figheight()*original_dpi))
+    class FigureScrollArea(QtWidgets.QScrollArea):
+        def eventFilter(self, watched, event):
+            if watched is canvas and event.type() == QtCore.QEvent.Type.Wheel:
+                # Matplotlib 会接收画布上的滚轮事件；转交给滚动区，
+                # 使鼠标位于图内时，滚轮和触控板也能浏览整张图。
+                self.wheelEvent(event)
+                return True
+            return super().eventFilter(watched, event)
+
+    scroll = FigureScrollArea(window)
+    scroll.setWidgetResizable(False)
+    scroll.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter | QtCore.Qt.AlignmentFlag.AlignTop)
+    window.takeCentralWidget()
+    canvas.setFixedSize(width, height)
+    scroll.setWidget(canvas)
+    canvas.installEventFilter(scroll)
+    window.setCentralWidget(scroll)
+    window.resize(window_width, window_height)
+    window.move(available.x()+(available.width()-window_width)//2,
+                available.y()+(available.height()-window_height)//2)
+    canvas.draw_idle()
+    return True
